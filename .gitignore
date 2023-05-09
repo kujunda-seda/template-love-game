@@ -1,0 +1,20 @@
+# General
+*.DS_Store
+*.dylib
+*.dmg*
+
+# Compound love executables
+src/*.zip
+src/*.love
+
+# Thumbnails
+._*
+
+# Love
+/xcode/Build
+/xcode/DerivedData
+/xcode/ios/include
+/xcode/ios/libraries
+/xcode/ios/luajit-git
+/xcode/macosx/Frameworks
+*xcuserdata*
