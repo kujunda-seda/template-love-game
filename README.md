@@ -1,15 +1,17 @@
 # [Game title]
 [Game description]
 
-> This repo is not intended for contributing. Its only purpose is to provide a ready-made template to create games with Lua and LÖVE framework for iOS without the need for time consuming setup.
-> 
-> If you are new to [LÖVE](https://love2d.org) - it's a straightforward and easy-to-learn game development framework with a basic run loop, events and graphics. It doesn't limit your creativity as some engines do. And if you're into coding, you can create your new game literally in days, even if you had no prior experience with the [Lua language](https://www.lua.org/start.html). You just need four (or two) steps to start:
-> 1. Install the tools
-> 2. Create the repo
-> 3. Change Apple Developer team and app bundle identifier
-> 4. Distribute to TestFlight
-> 
-> _Replace the above text with your new game description._
+_Note: This repo is not intended for contributing. Its only purpose is to provide a ready-made template to create games with Lua and LÖVE framework for iOS without the need for time consuming setup._
+
+If you are new to [LÖVE](https://love2d.org) - it's a straightforward and easy-to-learn game development framework with a basic run loop, events and graphics. It doesn't limit your creativity as some engines do. And if you're into coding, you can create your new game literally in days, even if you had no prior experience with the [Lua language](https://www.lua.org/start.html). You just need four (or two) steps to start:
+1. Install the tools
+2. Create the repo
+3. Change Apple Developer team and app bundle identifier
+4. Distribute to TestFlight
+
+As your games will be getting more complex, you might want to apply a little structure into the written code and I welcome you to read my article on [Clean architecture based on LÖVE example](https://medium.com/@yankalbaska/clean-architecture-in-game-development-e57542a96e5e). 
+
+_Replace the above text with your new game description._
 
 ## Development Environment Setup
 Developing iOS games with [LÖVE framework](https://love2d.org) consists of 2 parts: 
@@ -75,7 +77,8 @@ In VSCode:
 ## Debugging
 In VSCode Terminal run:
 `love src`.
-In addition to running the project, it will output `print` statements into the console.
+In addition to running the project, it will output `print` statements into the console.  
+You can also use a separate debugging plugin for VSCode [Local Lua Debugger](https://marketplace.visualstudio.com/items?itemName=tomblind.local-lua-debugger-vscode) if you need.
 
 ## Distribution
 1. Before you can configure XCode, you'll need an Apple Developer account at [developer.apple.com](https://developer.apple.com/account) and a new [bundle identifier](https://developer.apple.com/account/resources/identifiers/list) for the app.
