@@ -16,12 +16,12 @@ Developing iOS games with [LÖVE framework](https://love2d.org) consists of 2 pa
 - `build` - a preset xcode project used for installing on a simulator and distribution (only distribution-specific changes will be required),
 - `src` - the sources for the game, used for the development and to create the final `.love` file. Most of the creative work will be done in this folder only.
 
-After running the sources locally, you zip the `/src` source folder contents (without the folder itself) and rename `.zip` file into `.love`. This file is later used in iOS simulator or XCode project bundle to distribute in TestFlight / App Store.  
+After running the sources locally, you zip the `/src` source folder contents (without the folder itself) and rename `.zip` file into `.love`. This file is later used in the iOS simulator or XCode project bundle to distribute in TestFlight / App Store.  
 
 ### 1. Install LÖVE framework for macOS
 To be able to run and compile LÖVE games you need to install the framework/app.
 1. Download the latest version of LÖVE from [the website](http://love2d.org/#download), choose: MacOS 64-bit zipped.
-2. Unzip the app and move it to **Applications** folder.
+2. Unzip the app and move it into the **Applications** folder.
 3. To be able to call `love` from terminal in IDE and see console output, add alias to `~/.zshrc`:
 ```
 alias love="/Applications/love.app/Contents/MacOS/love"
@@ -62,8 +62,8 @@ mkdir temp-love
 cd temp-love
 git clone git@github.com:love2d/love.git
 ```
-2. Copy `src` and `platform/xcode` folders into `build` folder in your/this repo. You can skip `platfrom/unix` and other files.
-3. Download the required iOS libraries from https://love2d.org > Other downloads > iOS > libraries. Unzip the archive and move `iOS/libraries` folder into `build/platform/xcode/ios` folder. Full instructions are at the [LÖVE website](https://love2d.org/wiki/Getting_Started#iOS), but this will suffice. 
+2. Copy `src` and `platform/xcode` folders into the `build` folder in your/this repo. You can skip `platform/unix` and other files.
+3. Download the required iOS libraries from https://love2d.org > Other downloads > iOS > libraries. Unzip the archive and move the `iOS/libraries` folder into the `build/platform/xcode/ios` folder. Full instructions are at the [LÖVE website](https://love2d.org/wiki/Getting_Started#iOS), but this will suffice. 
 4. Don't forget to reconfigure the project after as outlined in the Distribution section below.
 
 ## Running locally
@@ -85,10 +85,10 @@ In addition to running the project, it will output `print` statements into the c
 
 - \+ Automatically manage signing
 - Team (if you log in with your developer account, you will see it in drop down)
-- Bundle idenfitier (copy it from https://developer.apple.com/account/resources/identifiers/list)
+- Bundle identifier (copy it from https://developer.apple.com/account/resources/identifiers/list)
 
 There are 2 options to test the game:
-#### Option 1. Air drop - quick for local testing
+#### Option 1. Airdrop - quick for local testing
 The easiest way to test your game on iOS Simulator or device is running `love-ios` in XCode and drag-and-dropping or air-dropping the `.love` file straight into the app. You will have a list of apps you dropped earlier and can start any of them.
 
 #### Option 2. Fusing a single game - for TestFlight and App Store
@@ -97,10 +97,10 @@ The easiest way to test your game on iOS Simulator or device is running `love-io
   - Copy items if needed
   - Create folder references
 
-2.2. (Optional, but desired) Change the name: File inspector (right sidebar) for project > Identity and Type > Name. Proceed with the rename of the linked files and targets as well.  
+2.2. (Optional, but desired) Change the name: File inspector (right sidebar) for project > Identity and Type > Name. Proceed with the renaming of the linked files and targets as well.  
 
 2.3. (Optional, but desired) Change the `Version` in the project > Identity settings, e.g. `1.0` or `0.0.1`.
 
 2.4  (Optional) Change the icon of the app by providing required images in Project > Images > iOS AppIcon (see Apple Guidelines for it).
 
-2.5. In main screen top bar select `[name]-ios` target > Any iOS Device, run menu Product > Archive. Your app is now good to be distributed in TestFlight with **Distribute App**.
+2.5. In the main screen top bar select `[name]-ios` target > Any iOS Device, run menu Product > Archive. Your app is now good to be distributed in TestFlight with **Distribute App**.
