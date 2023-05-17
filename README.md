@@ -1,7 +1,15 @@
 # [Game title]
 [Game description]
 
-_Note: This repo is not intended for contributing. Its only purpose is to provide a ready-made template to create games with Lua and LÖVE framework for iOS without the need for time consuming setup. Install the tools, create the repo, change Apple Developer team and app bundle identifier, distribute. Please make a fork if you require changes to the template._
+> This repo is not intended for contributing. Its only purpose is to provide a ready-made template to create games with Lua and LÖVE framework for iOS without the need for time consuming setup.
+> 
+> If you are new to [LÖVE](https://love2d.org) - it's a straightforward and easy-to-learn game development framework with a basic run loop, events and graphics. It doesn't limit your creativity as some engines do. And if you're into coding, you can create your new game literally in days, even if you had no prior experience with the [Lua language](https://www.lua.org/start.html). You just need four (or two) steps to start:
+> 1. Install the tools
+> 2. Create the repo
+> 3. Change Apple Developer team and app bundle identifier
+> 4. Distribute to TestFlight
+> 
+> _Replace the above text with your new game description._
 
 ## Development Environment Setup
 Developing iOS games with [LÖVE framework](https://love2d.org) consists of 2 parts: 
