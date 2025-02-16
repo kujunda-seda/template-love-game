@@ -70,7 +70,7 @@ cd temp-love
 git clone git@github.com:love2d/love.git
 ```
 2. Copy `src` and `platform/xcode` folders into the `build` folder in your/this repo. You can skip `platform/unix` and other files. You can delete the `temp-love` folder now.
-3. Download the required iOS libraries from https://love2d.org > Other downloads > iOS > libraries (no need to download sources). Unzip the archive and move the `iOS/libraries` folder into the `build/platform/xcode/ios` folder. Full instructions are at the [LÖVE website](https://love2d.org/wiki/Getting_Started#iOS), but this will suffice. 
+3. Download the required iOS libraries from https://love2d.org > Other downloads > iOS > libraries (no need to download sources). Unzip the archive and move the `iOS/libraries` folder into the `build/platform/xcode/ios` folder, so that the the final path would be e.g. `build/platform/xcode/ios/libraries/Lua.xcframework`. Full instructions are at the [LÖVE website](https://love2d.org/wiki/Getting_Started#iOS), but this will suffice.
 4. Don't forget to reconfigure the project after as outlined in the Distribution section below.
 
 ## Running locally
