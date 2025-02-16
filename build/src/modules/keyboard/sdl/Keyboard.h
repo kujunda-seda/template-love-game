@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -26,7 +26,9 @@
 #include "common/EnumMap.h"
 
 // SDL
-#include <SDL_keyboard.h>
+#include <SDL3/SDL_keyboard.h>
+
+#include <map>
 
 namespace love
 {
@@ -41,13 +43,11 @@ public:
 
 	Keyboard();
 
-	// Implements Module.
-	const char *getName() const;
-
 	void setKeyRepeat(bool enable);
 	bool hasKeyRepeat() const;
 	bool isDown(const std::vector<Key> &keylist) const;
 	bool isScancodeDown(const std::vector<Scancode> &scancodelist) const;
+	bool isModifierActive(ModifierKey key) const;
 
 	Key getKeyFromScancode(Scancode scancode) const;
 	Scancode getScancodeFromKey(Key key) const;
@@ -56,6 +56,9 @@ public:
 	void setTextInput(bool enable, double x, double y, double w, double h);
 	bool hasTextInput() const;
 	bool hasScreenKeyboard() const;
+
+	static bool getConstant(Key in, SDL_Keycode &out);
+	static bool getConstant(SDL_Keycode in, Key &out);
 
 	static bool getConstant(Scancode in, SDL_Scancode &out);
 	static bool getConstant(SDL_Scancode in, Scancode &out);
@@ -66,11 +69,11 @@ private:
 	// The real implementation is in love::event::sdl::Event::Convert.
 	bool key_repeat;
 
-	static const SDL_Keycode *createKeyMap();
-	static const SDL_Keycode *keymap;
+	static std::map<Key, SDL_Keycode> keyToSDLKey;
+	static std::map<SDL_Keycode, Key> sdlKeyToKey;
 
-	static EnumMap<Scancode, SDL_Scancode, SDL_NUM_SCANCODES>::Entry scancodeEntries[];
-	static EnumMap<Scancode, SDL_Scancode, SDL_NUM_SCANCODES> scancodes;
+	static EnumMap<Scancode, SDL_Scancode, SDL_SCANCODE_COUNT>::Entry scancodeEntries[];
+	static EnumMap<Scancode, SDL_Scancode, SDL_SCANCODE_COUNT> scancodes;
 
 }; // Keyboard
 

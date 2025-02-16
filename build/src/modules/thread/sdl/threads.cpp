@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -50,22 +50,22 @@ void Mutex::unlock()
 
 Conditional::Conditional()
 {
-	cond = SDL_CreateCond();
+	cond = SDL_CreateCondition();
 }
 
 Conditional::~Conditional()
 {
-	SDL_DestroyCond(cond);
+	SDL_DestroyCondition(cond);
 }
 
 void Conditional::signal()
 {
-	SDL_CondSignal(cond);
+	SDL_SignalCondition(cond);
 }
 
 void Conditional::broadcast()
 {
-	SDL_CondBroadcast(cond);
+	SDL_BroadcastCondition(cond);
 }
 
 bool Conditional::wait(thread::Mutex *_mutex, int timeout)
@@ -75,9 +75,12 @@ bool Conditional::wait(thread::Mutex *_mutex, int timeout)
 	// mixing thread implementations.
 	Mutex *mutex = (Mutex *) _mutex;
 	if (timeout < 0)
-		return !SDL_CondWait(cond, mutex->mutex);
+	{
+		SDL_WaitCondition(cond, mutex->mutex);
+		return true;
+	}
 	else
-		return (SDL_CondWaitTimeout(cond, mutex->mutex, timeout) == 0);
+		return SDL_WaitConditionTimeout(cond, mutex->mutex, timeout);
 }
 
 } // sdl

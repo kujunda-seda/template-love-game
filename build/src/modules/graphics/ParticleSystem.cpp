@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -93,7 +93,7 @@ ParticleSystem::ParticleSystem(Texture *texture, uint32 size)
 	, offset(float(texture->getWidth())*0.5f, float(texture->getHeight())*0.5f)
 	, defaultOffset(true)
 	, relativeRotation(false)
-	, vertexAttributes(vertex::CommonFormat::XYf_STf_RGBAub, 0)
+	, vertexAttributesID(Module::getInstance<Graphics>(Module::M_GRAPHICS)->registerVertexAttributes(VertexAttributes(CommonFormat::XYf_STf_RGBAub, 0)))
 	, buffer(nullptr)
 {
 	if (size == 0 || size > MAX_PARTICLES)
@@ -154,7 +154,7 @@ ParticleSystem::ParticleSystem(const ParticleSystem &p)
 	, colors(p.colors)
 	, quads(p.quads)
 	, relativeRotation(p.relativeRotation)
-	, vertexAttributes(p.vertexAttributes)
+	, vertexAttributesID(p.vertexAttributesID)
 	, buffer(nullptr)
 {
 	setBufferSize(maxParticles);
@@ -191,7 +191,9 @@ void ParticleSystem::createBuffers(size_t size)
 		auto gfx = Module::getInstance<Graphics>(Module::M_GRAPHICS);
 
 		size_t bytes = sizeof(Vertex) * size * 4;
-		buffer = gfx->newBuffer(bytes, nullptr, BUFFER_VERTEX, vertex::USAGE_STREAM, 0);
+		Buffer::Settings settings(BUFFERUSAGEFLAG_VERTEX, BUFFERDATAUSAGE_STREAM);
+		auto decl = Buffer::getCommonFormatDeclaration(CommonFormat::XYf_STf_RGBAub);
+		buffer = gfx->newBuffer(settings, decl, nullptr, bytes, 0);
 	}
 	catch (std::bad_alloc &)
 	{
@@ -203,7 +205,8 @@ void ParticleSystem::createBuffers(size_t size)
 void ParticleSystem::deleteBuffers()
 {
 	delete[] pMem;
-	delete buffer;
+	if (buffer)
+		buffer->release();
 
 	pMem = nullptr;
 	buffer = nullptr;
@@ -1029,18 +1032,18 @@ void ParticleSystem::draw(Graphics *gfx, const Matrix4 &m)
 	if (pCount == 0 || texture.get() == nullptr || pMem == nullptr || buffer == nullptr)
 		return;
 
-	gfx->flushStreamDraws();
+	gfx->flushBatchedDraws();
 
 	if (Shader::isDefaultActive())
 		Shader::attachDefault(Shader::STANDARD_DEFAULT);
 
-	if (Shader::current && texture.get())
-		Shader::current->checkMainTexture(texture);
+	if (Shader::current)
+		Shader::current->validateDrawState(PRIMITIVE_TRIANGLES, texture);
 
 	const Vector2 *positions = texture->getQuad()->getVertexPositions();
 	const Vector2 *texcoords = texture->getQuad()->getVertexTexCoords();
 
-	Vertex *pVerts = (Vertex *) buffer->map();
+	Vertex *pVerts = (Vertex *) buffer->map(Buffer::MAP_WRITE_INVALIDATE, 0, buffer->getSize());
 	Particle *p = pHead;
 
 	bool useQuads = !quads.empty();
@@ -1076,14 +1079,15 @@ void ParticleSystem::draw(Graphics *gfx, const Matrix4 &m)
 		p = p->next;
 	}
 
-	buffer->unmap();
+	buffer->unmap(0, pCount * sizeof(Vertex) * 4);
 
 	Graphics::TempTransform transform(gfx, m);
 
-	vertex::BufferBindings vertexbuffers;
+	BufferBindings vertexbuffers;
 	vertexbuffers.set(0, buffer, 0);
 
-	gfx->drawQuads(0, pCount, vertexAttributes, vertexbuffers, texture);
+	Texture *tex = gfx->getTextureOrDefaultForActiveShader(texture);
+	gfx->drawQuads(0, pCount, vertexAttributesID, vertexbuffers, tex);
 }
 
 bool ParticleSystem::getConstant(const char *in, AreaSpreadDistribution &out)

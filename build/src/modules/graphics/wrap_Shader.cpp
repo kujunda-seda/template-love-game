@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -278,12 +278,27 @@ int w_Shader_sendTextures(lua_State *L, int startidx, Shader *shader, const Shad
 	for (int i = 0; i < count; i++)
 	{
 		Texture *tex = luax_checktexture(L, startidx + i);
-		if (tex->getTextureType() != info->textureType)
-			return luaL_argerror(L, startidx + i, "invalid texture type for uniform");
 		textures.push_back(tex);
 	}
 
 	luax_catchexcept(L, [&]() { shader->sendTextures(info, textures.data(), count); });
+	return 0;
+}
+
+int w_Shader_sendBuffers(lua_State *L, int startidx, Shader *shader, const Shader::UniformInfo *info)
+{
+	int count = _getCount(L, startidx, info);
+
+	std::vector<Buffer *> buffers;
+	buffers.reserve(count);
+
+	for (int i = 0; i < count; i++)
+	{
+		Buffer *buffer = luax_checktype<Buffer>(L, startidx + i);
+		buffers.push_back(buffer);
+	}
+
+	luax_catchexcept(L, [&]() { shader->sendBuffers(info, buffers.data(), count); });
 	return 0;
 }
 
@@ -302,7 +317,11 @@ static int w_Shader_sendLuaValues(lua_State *L, int startidx, Shader *shader, co
 	case Shader::UNIFORM_BOOL:
 		return w_Shader_sendBooleans(L, startidx, shader, info);
 	case Shader::UNIFORM_SAMPLER:
+	case Shader::UNIFORM_STORAGETEXTURE:
 		return w_Shader_sendTextures(L, startidx, shader, info);
+	case Shader::UNIFORM_TEXELBUFFER:
+	case Shader::UNIFORM_STORAGEBUFFER:
+		return w_Shader_sendBuffers(L, startidx, shader, info);
 	default:
 		return luaL_error(L, "Unknown variable type for shader uniform '%s", name);
 	}
@@ -310,8 +329,9 @@ static int w_Shader_sendLuaValues(lua_State *L, int startidx, Shader *shader, co
 
 static int w_Shader_sendData(lua_State *L, int startidx, Shader *shader, const Shader::UniformInfo *info, bool colors)
 {
-	if (info->baseType == Shader::UNIFORM_SAMPLER)
-		return luaL_error(L, "Uniform sampler values (textures) cannot be sent to Shaders via Data objects.");
+	if (info->baseType == Shader::UNIFORM_SAMPLER || info->baseType == Shader::UNIFORM_STORAGETEXTURE
+		|| info->baseType == Shader::UNIFORM_TEXELBUFFER || info->baseType == Shader::UNIFORM_STORAGEBUFFER)
+		return luaL_error(L, "Only value types (floats, ints, vectors, matrices, etc) be sent to Shaders via Data objects.");
 
 	math::Transform::MatrixLayout layout = math::Transform::MATRIX_ROW_MAJOR;
 	int dataidx = startidx;
@@ -426,15 +446,13 @@ int w_Shader_send(lua_State *L)
 	const char *name = luaL_checkstring(L, 2);
 
 	const Shader::UniformInfo *info = shader->getUniformInfo(name);
-	if (info == nullptr)
+	if (info == nullptr || !info->active)
 		return luaL_error(L, "Shader uniform '%s' does not exist.\nA common error is to define but not use the variable.", name);
 
-	int startidx = 3;
-
-	if (luax_istype(L, startidx, Data::type) || (info->baseType == Shader::UNIFORM_MATRIX && luax_istype(L, startidx + 1, Data::type)))
-		return w_Shader_sendData(L, startidx, shader, info, false);
+	if (luax_istype(L, 3, Data::type) || (info->baseType == Shader::UNIFORM_MATRIX && luax_istype(L, 4, Data::type)))
+		return w_Shader_sendData(L, 3, shader, info, false);
 	else
-		return w_Shader_sendLuaValues(L, startidx, shader, info, name);
+		return w_Shader_sendLuaValues(L, 3, shader, info, name);
 }
 
 int w_Shader_sendColors(lua_State *L)
@@ -443,16 +461,19 @@ int w_Shader_sendColors(lua_State *L)
 	const char *name = luaL_checkstring(L, 2);
 
 	const Shader::UniformInfo *info = shader->getUniformInfo(name);
-	if (info == nullptr)
+	if (info == nullptr || !info->active)
 		return luaL_error(L, "Shader uniform '%s' does not exist.\nA common error is to define but not use the variable.", name);
 
 	if (info->baseType != Shader::UNIFORM_FLOAT || info->components < 3)
-		return luaL_error(L, "sendColor can only be used on vec3 or vec4 uniforms.");
+		return luaL_error(L, "Shader:sendColor can only be used with vec3 or vec4 uniforms.");
 
 	if (luax_istype(L, 3, Data::type))
-		return w_Shader_sendData(L, 3, shader, info, true);
+		w_Shader_sendData(L, 3, shader, info, true);
 	else
-		return w_Shader_sendFloats(L, 3, shader, info, true);
+		w_Shader_sendFloats(L, 3, shader, info, true);
+
+	luax_pushboolean(L, true);
+	return 1;
 }
 
 int w_Shader_hasUniform(lua_State *L)
@@ -463,12 +484,92 @@ int w_Shader_hasUniform(lua_State *L)
 	return 1;
 }
 
+int w_Shader_hasStage(lua_State* L)
+{
+	Shader *shader = luax_checkshader(L, 1);
+	ShaderStageType stage;
+	const char *str = luaL_checkstring(L, 2);
+	if (!ShaderStage::getConstant(str, stage))
+		return luax_enumerror(L, "shader stage", str);
+
+	luax_pushboolean(L, shader->hasStage(stage));
+	return 1;
+}
+
+int w_Shader_getLocalThreadgroupSize(lua_State* L)
+{
+	Shader *shader = luax_checkshader(L, 1);
+
+	if (!shader->hasStage(SHADERSTAGE_COMPUTE))
+	{
+		lua_pushnil(L);
+		return 1;
+	}
+
+	int x, y, z;
+	shader->getLocalThreadgroupSize(&x, &y, &z);
+	lua_pushinteger(L, x);
+	lua_pushinteger(L, y);
+	lua_pushinteger(L, z);
+	return 3;
+}
+
+int w_Shader_getBufferFormat(lua_State *L)
+{
+	Shader *shader = luax_checkshader(L, 1);
+	const char *name = luaL_checkstring(L, 2);
+	const std::vector<Buffer::DataDeclaration> *format = shader->getBufferFormat(name);
+	if (format != nullptr)
+	{
+		lua_createtable(L, (int)format->size(), 0);
+
+		for (size_t i = 0; i < format->size(); i++)
+		{
+			const Buffer::DataDeclaration &member = (*format)[i];
+
+			lua_createtable(L, 0, 3);
+
+			lua_pushstring(L, member.name.c_str());
+			lua_setfield(L, -2, "name");
+
+			const char* formatstr = "unknown";
+			getConstant(member.format, formatstr);
+			lua_pushstring(L, formatstr);
+			lua_setfield(L, -2, "format");
+
+			lua_pushinteger(L, member.arrayLength);
+			lua_setfield(L, -2, "arraylength");
+
+			lua_rawseti(L, -2, i + 1);
+		}
+
+		return 1;
+	}
+
+	return luaL_error(L, "Buffer '%s' does not exist in the Shader.", name);
+}
+
+int w_Shader_getDebugName(lua_State *L)
+{
+	Shader *shader = luax_checkshader(L, 1);
+	const std::string &debugName = shader->getDebugName();
+	if (debugName.empty())
+		lua_pushnil(L);
+	else
+		luax_pushstring(L, debugName);
+	return 1;
+}
+
 static const luaL_Reg w_Shader_functions[] =
 {
-	{ "getWarnings", w_Shader_getWarnings },
-	{ "send",        w_Shader_send },
-	{ "sendColor",   w_Shader_sendColors },
-	{ "hasUniform",  w_Shader_hasUniform },
+	{ "getWarnings",             w_Shader_getWarnings },
+	{ "send",                    w_Shader_send },
+	{ "sendColor",               w_Shader_sendColors },
+	{ "hasUniform",              w_Shader_hasUniform },
+	{ "hasStage",                w_Shader_hasStage },
+	{ "getLocalThreadgroupSize", w_Shader_getLocalThreadgroupSize },
+	{ "getBufferFormat",         w_Shader_getBufferFormat },
+	{ "getDebugName",            w_Shader_getDebugName },
 	{ 0, 0 }
 };
 

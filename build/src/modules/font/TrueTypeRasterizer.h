@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -24,6 +24,7 @@
 // LOVE
 #include "Rasterizer.h"
 #include "common/StringMap.h"
+#include "common/Optional.h"
 
 namespace love
 {
@@ -42,6 +43,13 @@ public:
 		HINTING_MONO,
 		HINTING_NONE,
 		HINTING_MAX_ENUM
+	};
+
+	struct Settings
+	{
+		Hinting hinting = HINTING_NORMAL;
+		OptionalFloat dpiScale;
+		bool sdf = false;
 	};
 
 	virtual ~TrueTypeRasterizer() {}

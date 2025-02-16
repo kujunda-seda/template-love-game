@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -23,150 +23,42 @@
 #include "Graphics.h"
 
 #include "libraries/glslang/glslang/Public/ShaderLang.h"
-
-// TODO: Use love.graphics to determine actual limits?
-static const TBuiltInResource defaultTBuiltInResource = {
-	/* .MaxLights = */ 32,
-	/* .MaxClipPlanes = */ 6,
-	/* .MaxTextureUnits = */ 32,
-	/* .MaxTextureCoords = */ 32,
-	/* .MaxVertexAttribs = */ 64,
-	/* .MaxVertexUniformComponents = */ 16384,
-	/* .MaxVaryingFloats = */ 128,
-	/* .MaxVertexTextureImageUnits = */ 32,
-	/* .MaxCombinedTextureImageUnits = */ 80,
-	/* .MaxTextureImageUnits = */ 32,
-	/* .MaxFragmentUniformComponents = */ 16384,
-	/* .MaxDrawBuffers = */ 8,
-	/* .MaxVertexUniformVectors = */ 4096,
-	/* .MaxVaryingVectors = */ 32,
-	/* .MaxFragmentUniformVectors = */ 4096,
-	/* .MaxVertexOutputVectors = */ 32,
-	/* .MaxFragmentInputVectors = */ 31,
-	/* .MinProgramTexelOffset = */ -8,
-	/* .MaxProgramTexelOffset = */ 7,
-	/* .MaxClipDistances = */ 8,
-	/* .MaxComputeWorkGroupCountX = */ 65535,
-	/* .MaxComputeWorkGroupCountY = */ 65535,
-	/* .MaxComputeWorkGroupCountZ = */ 65535,
-	/* .MaxComputeWorkGroupSizeX = */ 1024,
-	/* .MaxComputeWorkGroupSizeY = */ 1024,
-	/* .MaxComputeWorkGroupSizeZ = */ 64,
-	/* .MaxComputeUniformComponents = */ 1024,
-	/* .MaxComputeTextureImageUnits = */ 32,
-	/* .MaxComputeImageUniforms = */ 16,
-	/* .MaxComputeAtomicCounters = */ 4096,
-	/* .MaxComputeAtomicCounterBuffers = */ 8,
-	/* .MaxVaryingComponents = */ 128,
-	/* .MaxVertexOutputComponents = */ 128,
-	/* .MaxGeometryInputComponents = */ 128,
-	/* .MaxGeometryOutputComponents = */ 128,
-	/* .MaxFragmentInputComponents = */ 128,
-	/* .MaxImageUnits = */ 192,
-	/* .MaxCombinedImageUnitsAndFragmentOutputs = */ 144,
-	/* .MaxCombinedShaderOutputResources = */ 144,
-	/* .MaxImageSamples = */ 32,
-	/* .MaxVertexImageUniforms = */ 16,
-	/* .MaxTessControlImageUniforms = */ 16,
-	/* .MaxTessEvaluationImageUniforms = */ 16,
-	/* .MaxGeometryImageUniforms = */ 16,
-	/* .MaxFragmentImageUniforms = */ 16,
-	/* .MaxCombinedImageUniforms = */ 80,
-	/* .MaxGeometryTextureImageUnits = */ 16,
-	/* .MaxGeometryOutputVertices = */ 256,
-	/* .MaxGeometryTotalOutputComponents = */ 1024,
-	/* .MaxGeometryUniformComponents = */ 1024,
-	/* .MaxGeometryVaryingComponents = */ 64,
-	/* .MaxTessControlInputComponents = */ 128,
-	/* .MaxTessControlOutputComponents = */ 128,
-	/* .MaxTessControlTextureImageUnits = */ 16,
-	/* .MaxTessControlUniformComponents = */ 1024,
-	/* .MaxTessControlTotalOutputComponents = */ 4096,
-	/* .MaxTessEvaluationInputComponents = */ 128,
-	/* .MaxTessEvaluationOutputComponents = */ 128,
-	/* .MaxTessEvaluationTextureImageUnits = */ 16,
-	/* .MaxTessEvaluationUniformComponents = */ 1024,
-	/* .MaxTessPatchComponents = */ 120,
-	/* .MaxPatchVertices = */ 32,
-	/* .MaxTessGenLevel = */ 64,
-	/* .MaxViewports = */ 16,
-	/* .MaxVertexAtomicCounters = */ 4096,
-	/* .MaxTessControlAtomicCounters = */ 4096,
-	/* .MaxTessEvaluationAtomicCounters = */ 4096,
-	/* .MaxGeometryAtomicCounters = */ 4096,
-	/* .MaxFragmentAtomicCounters = */ 4096,
-	/* .MaxCombinedAtomicCounters = */ 4096,
-	/* .MaxAtomicCounterBindings = */ 8,
-	/* .MaxVertexAtomicCounterBuffers = */ 8,
-	/* .MaxTessControlAtomicCounterBuffers = */ 8,
-	/* .MaxTessEvaluationAtomicCounterBuffers = */ 8,
-	/* .MaxGeometryAtomicCounterBuffers = */ 8,
-	/* .MaxFragmentAtomicCounterBuffers = */ 8,
-	/* .MaxCombinedAtomicCounterBuffers = */ 8,
-	/* .MaxAtomicCounterBufferSize = */ 16384,
-	/* .MaxTransformFeedbackBuffers = */ 4,
-	/* .MaxTransformFeedbackInterleavedComponents = */ 64,
-	/* .MaxCullDistances = */ 8,
-	/* .MaxCombinedClipAndCullDistances = */ 8,
-	/* .MaxSamples = */ 32,
-	/* .maxMeshOutputVerticesNV = */ 256,
-	/* .maxMeshOutputPrimitivesNV = */ 512,
-	/* .maxMeshWorkGroupSizeX_NV = */ 32,
-	/* .maxMeshWorkGroupSizeY_NV = */ 1,
-	/* .maxMeshWorkGroupSizeZ_NV = */ 1,
-	/* .maxTaskWorkGroupSizeX_NV = */ 32,
-	/* .maxTaskWorkGroupSizeY_NV = */ 1,
-	/* .maxTaskWorkGroupSizeZ_NV = */ 1,
-	/* .maxMeshViewCountNV = */ 4,
-	/* .limits = */ {
-		/* .nonInductiveForLoops = */ 1,
-		/* .whileLoops = */ 1,
-		/* .doWhileLoops = */ 1,
-		/* .generalUniformIndexing = */ 1,
-		/* .generalAttributeMatrixVectorIndexing = */ 1,
-		/* .generalVaryingIndexing = */ 1,
-		/* .generalSamplerIndexing = */ 1,
-		/* .generalVariableIndexing = */ 1,
-		/* .generalConstantMatrixVectorIndexing = */ 1,
-	}
-};
+#include "libraries/glslang/glslang/Public/ResourceLimits.h"
 
 namespace love
 {
 namespace graphics
 {
 
-ShaderStage::ShaderStage(Graphics *gfx, StageType stage, const std::string &glsl, bool gles, const std::string &cachekey)
+ShaderStage::ShaderStage(Graphics */*gfx*/, ShaderStageType stage, const std::string &glsl, bool gles, const std::string &cachekey)
 	: stageType(stage)
 	, source(glsl)
 	, cacheKey(cachekey)
-	, glslangShader(nullptr)
+	, glslangValidationShader(nullptr)
 {
 	EShLanguage glslangStage = EShLangCount;
-	if (stage == STAGE_VERTEX)
+	if (stage == SHADERSTAGE_VERTEX)
 		glslangStage = EShLangVertex;
-	else if (stage == STAGE_PIXEL)
+	else if (stage == SHADERSTAGE_PIXEL)
 		glslangStage = EShLangFragment;
+	else if (stage == SHADERSTAGE_COMPUTE)
+		glslangStage = EShLangCompute;
 	else
 		throw love::Exception("Cannot compile shader stage: unknown stage type.");
 
-	glslangShader = new glslang::TShader(glslangStage);
+	auto glslangShader = new glslang::TShader(glslangStage);
 
-	bool supportsGLSL3 = gfx->getCapabilities().features[Graphics::FEATURE_GLSL3];
-	int defaultversion = gles ? 100 : 120;
-	EProfile defaultprofile = ENoProfile;
+	int defaultversion = gles ? 300 : 330;
+	EProfile defaultprofile = gles ? EEsProfile : ECoreProfile;
 
 	const char *csrc = glsl.c_str();
 	int srclen = (int) glsl.length();
 	glslangShader->setStringsWithLengths(&csrc, &srclen, 1);
 
 	bool forcedefault = false;
-	if (source.find("#define LOVE_GLSL1_ON_GLSL3") != std::string::npos)
-		forcedefault = true;
+	bool forwardcompat = true;
 
-	bool forwardcompat = supportsGLSL3 && !forcedefault;
-
-	if (!glslangShader->parse(&defaultTBuiltInResource, defaultversion, defaultprofile, forcedefault, forwardcompat, EShMsgSuppressWarnings))
+	if (!glslangShader->parse(GetResources(), defaultversion, defaultprofile, forcedefault, forwardcompat, (EShMessages)(EShMsgSuppressWarnings | EshMsgOverlappingLocations)))
 	{
 		const char *stagename = "unknown";
 		getConstant(stage, stagename);
@@ -178,6 +70,8 @@ ShaderStage::ShaderStage(Graphics *gfx, StageType stage, const std::string &glsl
 		delete glslangShader;
 		throw love::Exception("%s", err.c_str());
 	}
+
+	glslangValidationShader = glslangShader;
 }
 
 ShaderStage::~ShaderStage()
@@ -189,26 +83,34 @@ ShaderStage::~ShaderStage()
 			gfx->cleanupCachedShaderStage(stageType, cacheKey);
 	}
 
-	delete glslangShader;
+	delete glslangValidationShader;
 }
 
-bool ShaderStage::getConstant(const char *in, StageType &out)
+bool ShaderStage::getConstant(const char *in, ShaderStageType &out)
 {
 	return stageNames.find(in, out);
 }
 
-bool ShaderStage::getConstant(StageType in, const char *&out)
+bool ShaderStage::getConstant(ShaderStageType in, const char *&out)
 {
 	return stageNames.find(in, out);
 }
 
-StringMap<ShaderStage::StageType, ShaderStage::STAGE_MAX_ENUM>::Entry ShaderStage::stageNameEntries[] =
+const char *ShaderStage::getConstant(ShaderStageType in)
 {
-	{ "vertex", STAGE_VERTEX },
-	{ "pixel",  STAGE_PIXEL  },
+	const char *name = nullptr;
+	getConstant(in, name);
+	return name;
+}
+
+StringMap<ShaderStageType, SHADERSTAGE_MAX_ENUM>::Entry ShaderStage::stageNameEntries[] =
+{
+	{ "vertex",  SHADERSTAGE_VERTEX  },
+	{ "pixel",   SHADERSTAGE_PIXEL   },
+	{ "compute", SHADERSTAGE_COMPUTE },
 };
 
-StringMap<ShaderStage::StageType, ShaderStage::STAGE_MAX_ENUM> ShaderStage::stageNames(ShaderStage::stageNameEntries, sizeof(ShaderStage::stageNameEntries));
+StringMap<ShaderStageType, SHADERSTAGE_MAX_ENUM> ShaderStage::stageNames(ShaderStage::stageNameEntries, sizeof(ShaderStage::stageNameEntries));
 
 } // graphics
 } // love

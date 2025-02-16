@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -31,7 +31,7 @@
 #include <unordered_map>
 
 // Box2D
-#include <Box2D/Box2D.h>
+#include <box2d/Box2D.h>
 
 namespace love
 {
@@ -42,7 +42,7 @@ namespace box2d
 
 class Contact;
 class Body;
-class Fixture;
+class Shape;
 class Joint;
 
 /**
@@ -65,7 +65,7 @@ public:
 	friend class DistanceJoint;
 	friend class MouseJoint;
 	friend class Body;
-	friend class Fixture;
+	friend class Shape;
 
 	static love::Type type;
 
@@ -87,31 +87,60 @@ public:
 		lua_State *L;
 		ContactFilter();
 		~ContactFilter();
-		bool process(Fixture *a, Fixture *b);
+		bool process(Shape *a, Shape *b);
 	};
 
 	class QueryCallback : public b2QueryCallback
 	{
 	public:
-		QueryCallback(World *world, lua_State *L, int idx);
-		~QueryCallback();
-		virtual bool ReportFixture(b2Fixture *fixture);
+		QueryCallback(lua_State *L, int idx);
+		virtual ~QueryCallback();
+		bool ReportFixture(b2Fixture *fixture) override;
 	private:
-		World *world;
 		lua_State *L;
 		int funcidx;
+		int userargs;
+	};
+
+	class CollectCallback : public b2QueryCallback
+	{
+	public:
+		CollectCallback(uint16 categoryMask, lua_State *L);
+		virtual ~CollectCallback();
+		bool ReportFixture(b2Fixture *fixture) override;
+	private:
+		uint16 categoryMask;
+		lua_State *L;
+		int i = 1;
 	};
 
 	class RayCastCallback : public b2RayCastCallback
 	{
 	public:
-		RayCastCallback(World *world, lua_State *L, int idx);
-		~RayCastCallback();
-		virtual float32 ReportFixture(b2Fixture *fixture, const b2Vec2 &point, const b2Vec2 &normal, float32 fraction);
+		RayCastCallback(lua_State *L, int idx);
+		virtual ~RayCastCallback();
+		float ReportFixture(b2Fixture *fixture, const b2Vec2 &point, const b2Vec2 &normal, float fraction) override;
 	private:
-		World *world;
 		lua_State *L;
 		int funcidx;
+		int userargs;
+	};
+
+	class RayCastOneCallback : public b2RayCastCallback
+	{
+	public:
+		RayCastOneCallback(uint16 categoryMask, bool any);
+		virtual ~RayCastOneCallback() {};
+		float ReportFixture(b2Fixture* fixture, const b2Vec2& point, const b2Vec2& normal, float fraction) override;
+
+		b2Fixture *hitFixture;
+		b2Vec2 hitPoint;
+		b2Vec2 hitNormal;
+		float hitFraction;
+
+	private:
+		uint16 categoryMask;
+		bool any;
 	};
 
 	/**
@@ -270,14 +299,22 @@ public:
 	b2Body *getGroundBody() const;
 
 	/**
-	 * Gets all fixtures that overlap a given bounding box.
+	 * Calls a callback on all Shapes that overlap a given bounding box.
 	 **/
-	int queryBoundingBox(lua_State *L);
+	int queryShapesInArea(lua_State *L);
+
+	/**
+	 * Gets all Shapes that overlap a given bounding box.
+	 **/
+	int getShapesInArea(lua_State *L);
 
 	/**
 	 * Raycasts the World for all Fixtures in the path of the ray.
 	 **/
 	int rayCast(lua_State *L);
+
+	int rayCastAny(lua_State *L);
+	int rayCastClosest(lua_State *L);
 
 	/**
 	 * Destroy this world.
@@ -298,7 +335,7 @@ private:
 
 	// The list of to be destructed bodies.
 	std::vector<Body *> destructBodies;
-	std::vector<Fixture *> destructFixtures;
+	std::vector<Shape *> destructShapes;
 	std::vector<Joint *> destructJoints;
 	bool destructWorld;
 

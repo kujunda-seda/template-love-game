@@ -1,7 +1,8 @@
 //
 // Copyright (C) 2002-2005  3Dlabs Inc. Ltd.
 // Copyright (C) 2012-2016 LunarG, Inc.
-// Copyright (C) 2017 ARM Limited.
+// Copyright (C) 2017, 2022-2024 Arm Limited.
+// Modifications Copyright (C) 2020 Advanced Micro Devices, Inc. All rights reserved.
 //
 // All rights reserved.
 //
@@ -47,14 +48,9 @@
 #ifndef __INTERMEDIATE_H
 #define __INTERMEDIATE_H
 
-#if defined(_MSC_VER) && _MSC_VER >= 1900
-    #pragma warning(disable : 4464) // relative include path contains '..'
-    #pragma warning(disable : 5026) // 'glslang::TIntermUnary': move constructor was implicitly defined as deleted
-#endif
-
-#include "../Include/Common.h"
-#include "../Include/Types.h"
-#include "../Include/ConstantUnion.h"
+#include "Common.h"
+#include "Types.h"
+#include "ConstantUnion.h"
 
 namespace glslang {
 
@@ -66,10 +62,12 @@ class TIntermediate;
 enum TOperator {
     EOpNull,            // if in a node, should only mean a node is still being built
     EOpSequence,        // denotes a list of statements, or parameters, etc.
+    EOpScope,           // Used by debugging to denote a scoped list of statements
     EOpLinkerObjects,   // for aggregate node of objects the linker may need, if not reference by the rest of the AST
     EOpFunctionCall,
     EOpFunction,        // For function definition
     EOpParameters,      // an aggregate listing the parameters to a function
+    EOpSpirvInst,
 
     //
     // Unary operators
@@ -86,6 +84,8 @@ enum TOperator {
     EOpPreDecrement,
 
     EOpCopyObject,
+
+    EOpDeclare,        // Used by debugging to force declaration of variable in correct scope
 
     // (u)int* -> bool
     EOpConvInt8ToBool,
@@ -275,6 +275,16 @@ enum TOperator {
     EOpConvUint64ToPtr,
     EOpConvPtrToUint64,
 
+    // uvec2 <-> pointer
+    EOpConvUvec2ToPtr,
+    EOpConvPtrToUvec2,
+
+    // uint64_t -> accelerationStructureEXT
+    EOpConvUint64ToAccStruct,
+
+    // uvec2 -> accelerationStructureEXT
+    EOpConvUvec2ToAccStruct,
+
     //
     // binary operations
     //
@@ -422,11 +432,9 @@ enum TOperator {
     EOpReflect,
     EOpRefract,
 
-#ifdef AMD_EXTENSIONS
     EOpMin3,
     EOpMax3,
     EOpMid3,
-#endif
 
     EOpDPdx,            // Fragment only
     EOpDPdy,            // Fragment only
@@ -441,10 +449,7 @@ enum TOperator {
     EOpInterpolateAtCentroid, // Fragment only
     EOpInterpolateAtSample,   // Fragment only
     EOpInterpolateAtOffset,   // Fragment only
-
-#ifdef AMD_EXTENSIONS
     EOpInterpolateAtVertex,
-#endif
 
     EOpMatrixTimesMatrix,
     EOpOuterProduct,
@@ -501,6 +506,8 @@ enum TOperator {
     EOpSubgroupShuffleXor,
     EOpSubgroupShuffleUp,
     EOpSubgroupShuffleDown,
+    EOpSubgroupRotate,
+    EOpSubgroupClusteredRotate,
     EOpSubgroupAdd,
     EOpSubgroupMul,
     EOpSubgroupMin,
@@ -533,8 +540,9 @@ enum TOperator {
     EOpSubgroupQuadSwapHorizontal,
     EOpSubgroupQuadSwapVertical,
     EOpSubgroupQuadSwapDiagonal,
+    EOpSubgroupQuadAll,
+    EOpSubgroupQuadAny,
 
-#ifdef NV_EXTENSIONS
     EOpSubgroupPartition,
     EOpSubgroupPartitionedAdd,
     EOpSubgroupPartitionedMul,
@@ -557,11 +565,9 @@ enum TOperator {
     EOpSubgroupPartitionedExclusiveAnd,
     EOpSubgroupPartitionedExclusiveOr,
     EOpSubgroupPartitionedExclusiveXor,
-#endif
 
     EOpSubgroupGuardStop,
 
-#ifdef AMD_EXTENSIONS
     EOpMinInvocations,
     EOpMaxInvocations,
     EOpAddInvocations,
@@ -588,9 +594,9 @@ enum TOperator {
     EOpCubeFaceIndex,
     EOpCubeFaceCoord,
     EOpTime,
-#endif
 
     EOpAtomicAdd,
+    EOpAtomicSubtract,
     EOpAtomicMin,
     EOpAtomicMax,
     EOpAtomicAnd,
@@ -620,12 +626,26 @@ enum TOperator {
     EOpCooperativeMatrixLoad,
     EOpCooperativeMatrixStore,
     EOpCooperativeMatrixMulAdd,
+    EOpCooperativeMatrixLoadNV,
+    EOpCooperativeMatrixStoreNV,
+    EOpCooperativeMatrixMulAddNV,
+
+    EOpBeginInvocationInterlock, // Fragment only
+    EOpEndInvocationInterlock, // Fragment only
+
+    EOpIsHelperInvocation,
+
+    EOpDebugPrintf,
 
     //
     // Branch
     //
 
-    EOpKill,            // Fragment only
+    EOpKill,                // Fragment only
+    EOpTerminateInvocation, // Fragment only
+    EOpDemote,              // Fragment only
+    EOpTerminateRayKHR,         // Any-hit only
+    EOpIgnoreIntersectionKHR,   // Any-hit only
     EOpReturn,
     EOpBreak,
     EOpContinue,
@@ -648,9 +668,21 @@ enum TOperator {
     EOpConstructBool,
     EOpConstructFloat,
     EOpConstructDouble,
+    // Keep vector and matrix constructors in a consistent relative order for
+    // TParseContext::constructBuiltIn, which converts between 8/16/32 bit
+    // vector constructors
     EOpConstructVec2,
     EOpConstructVec3,
     EOpConstructVec4,
+    EOpConstructMat2x2,
+    EOpConstructMat2x3,
+    EOpConstructMat2x4,
+    EOpConstructMat3x2,
+    EOpConstructMat3x3,
+    EOpConstructMat3x4,
+    EOpConstructMat4x2,
+    EOpConstructMat4x3,
+    EOpConstructMat4x4,
     EOpConstructDVec2,
     EOpConstructDVec3,
     EOpConstructDVec4,
@@ -681,15 +713,6 @@ enum TOperator {
     EOpConstructU64Vec2,
     EOpConstructU64Vec3,
     EOpConstructU64Vec4,
-    EOpConstructMat2x2,
-    EOpConstructMat2x3,
-    EOpConstructMat2x4,
-    EOpConstructMat3x2,
-    EOpConstructMat3x3,
-    EOpConstructMat3x4,
-    EOpConstructMat4x2,
-    EOpConstructMat4x3,
-    EOpConstructMat4x4,
     EOpConstructDMat2x2,
     EOpConstructDMat2x3,
     EOpConstructDMat2x4,
@@ -743,7 +766,9 @@ enum TOperator {
     EOpConstructTextureSampler,
     EOpConstructNonuniform,     // expected to be transformed away, not present in final AST
     EOpConstructReference,
-    EOpConstructCooperativeMatrix,
+    EOpConstructCooperativeMatrixNV,
+    EOpConstructCooperativeMatrixKHR,
+    EOpConstructAccStruct,
     EOpConstructGuardEnd,
 
     //
@@ -786,10 +811,8 @@ enum TOperator {
     EOpImageQuerySamples,
     EOpImageLoad,
     EOpImageStore,
-#ifdef AMD_EXTENSIONS
     EOpImageLoadLod,
     EOpImageStoreLod,
-#endif
     EOpImageAtomicAdd,
     EOpImageAtomicMin,
     EOpImageAtomicMax,
@@ -804,9 +827,8 @@ enum TOperator {
     EOpSubpassLoad,
     EOpSubpassLoadMS,
     EOpSparseImageLoad,
-#ifdef AMD_EXTENSIONS
     EOpSparseImageLoadLod,
-#endif
+    EOpColorAttachmentReadEXT, // Fragment only
 
     EOpImageGuardEnd,
 
@@ -844,13 +866,11 @@ enum TOperator {
     EOpTextureOffsetClamp,
     EOpTextureGradClamp,
     EOpTextureGradOffsetClamp,
-#ifdef AMD_EXTENSIONS
     EOpTextureGatherLod,
     EOpTextureGatherLodOffset,
     EOpTextureGatherLodOffsets,
     EOpFragmentMaskFetch,
     EOpFragmentFetch,
-#endif
 
     EOpSparseTextureGuardBegin,
 
@@ -870,15 +890,12 @@ enum TOperator {
     EOpSparseTextureOffsetClamp,
     EOpSparseTextureGradClamp,
     EOpSparseTextureGradOffsetClamp,
-#ifdef AMD_EXTENSIONS
     EOpSparseTextureGatherLod,
     EOpSparseTextureGatherLodOffset,
     EOpSparseTextureGatherLodOffsets,
-#endif
 
     EOpSparseTextureGuardEnd,
 
-#ifdef NV_EXTENSIONS
     EOpImageFootprintGuardBegin,
     EOpImageSampleFootprintNV,
     EOpImageSampleFootprintClampNV,
@@ -886,7 +903,6 @@ enum TOperator {
     EOpImageSampleFootprintGradNV,
     EOpImageSampleFootprintGradClampNV,
     EOpImageFootprintGuardEnd,
-#endif
     EOpSamplingGuardEnd,
     EOpTextureGuardEnd,
 
@@ -905,15 +921,93 @@ enum TOperator {
     EOpFindLSB,
     EOpFindMSB,
 
-#ifdef NV_EXTENSIONS
+    EOpCountLeadingZeros,
+    EOpCountTrailingZeros,
+    EOpAbsDifference,
+    EOpAddSaturate,
+    EOpSubSaturate,
+    EOpAverage,
+    EOpAverageRounded,
+    EOpMul32x16,
+
     EOpTraceNV,
-    EOpReportIntersectionNV,
+    EOpTraceRayMotionNV,
+    EOpTraceKHR,
+    EOpReportIntersection,
     EOpIgnoreIntersectionNV,
     EOpTerminateRayNV,
     EOpExecuteCallableNV,
+    EOpExecuteCallableKHR,
     EOpWritePackedPrimitiveIndices4x8NV,
-#endif
+    EOpEmitMeshTasksEXT,
+    EOpSetMeshOutputsEXT,
+
     //
+    // GL_EXT_ray_query operations
+    //
+
+    EOpRayQueryInitialize,
+    EOpRayQueryTerminate,
+    EOpRayQueryGenerateIntersection,
+    EOpRayQueryConfirmIntersection,
+    EOpRayQueryProceed,
+    EOpRayQueryGetIntersectionType,
+    EOpRayQueryGetRayTMin,
+    EOpRayQueryGetRayFlags,
+    EOpRayQueryGetIntersectionT,
+    EOpRayQueryGetIntersectionInstanceCustomIndex,
+    EOpRayQueryGetIntersectionInstanceId,
+    EOpRayQueryGetIntersectionInstanceShaderBindingTableRecordOffset,
+    EOpRayQueryGetIntersectionGeometryIndex,
+    EOpRayQueryGetIntersectionPrimitiveIndex,
+    EOpRayQueryGetIntersectionBarycentrics,
+    EOpRayQueryGetIntersectionFrontFace,
+    EOpRayQueryGetIntersectionCandidateAABBOpaque,
+    EOpRayQueryGetIntersectionObjectRayDirection,
+    EOpRayQueryGetIntersectionObjectRayOrigin,
+    EOpRayQueryGetWorldRayDirection,
+    EOpRayQueryGetWorldRayOrigin,
+    EOpRayQueryGetIntersectionObjectToWorld,
+    EOpRayQueryGetIntersectionWorldToObject,
+
+    // 
+    // GL_NV_shader_invocation_reorder
+    //
+
+    EOpHitObjectTraceRayNV,
+    EOpHitObjectTraceRayMotionNV,
+    EOpHitObjectRecordHitNV,
+    EOpHitObjectRecordHitMotionNV,
+    EOpHitObjectRecordHitWithIndexNV,
+    EOpHitObjectRecordHitWithIndexMotionNV,
+    EOpHitObjectRecordMissNV,
+    EOpHitObjectRecordMissMotionNV,
+    EOpHitObjectRecordEmptyNV,
+    EOpHitObjectExecuteShaderNV,
+    EOpHitObjectIsEmptyNV,
+    EOpHitObjectIsMissNV,
+    EOpHitObjectIsHitNV,
+    EOpHitObjectGetRayTMinNV,
+    EOpHitObjectGetRayTMaxNV,
+    EOpHitObjectGetObjectRayOriginNV,
+    EOpHitObjectGetObjectRayDirectionNV,
+    EOpHitObjectGetWorldRayOriginNV,
+    EOpHitObjectGetWorldRayDirectionNV,
+    EOpHitObjectGetWorldToObjectNV,
+    EOpHitObjectGetObjectToWorldNV,
+    EOpHitObjectGetInstanceCustomIndexNV,
+    EOpHitObjectGetInstanceIdNV,
+    EOpHitObjectGetGeometryIndexNV,
+    EOpHitObjectGetPrimitiveIndexNV,
+    EOpHitObjectGetHitKindNV,
+    EOpHitObjectGetShaderBindingTableRecordIndexNV,
+    EOpHitObjectGetShaderRecordBufferHandleNV,
+    EOpHitObjectGetAttributesNV,
+    EOpHitObjectGetCurrentTimeNV,
+    EOpReorderThreadNV,
+    EOpFetchMicroTriangleVertexPositionNV,
+    EOpFetchMicroTriangleVertexBarycentricNV,
+
     // HLSL operations
     //
 
@@ -996,6 +1090,38 @@ enum TOperator {
     EOpWaveGetLaneIndex,                 // Will decompose to gl_SubgroupInvocationID.
     EOpWaveActiveCountBits,              // Will decompose to subgroupBallotBitCount(subgroupBallot()).
     EOpWavePrefixCountBits,              // Will decompose to subgroupBallotInclusiveBitCount(subgroupBallot()).
+
+    // GL_EXT_expect_assume
+    EOpAssumeEXT,
+    EOpExpectEXT,
+
+    // Shader Clock Ops
+    EOpReadClockSubgroupKHR,
+    EOpReadClockDeviceKHR,
+
+    // GL_EXT_ray_tracing_position_fetch
+    EOpRayQueryGetIntersectionTriangleVertexPositionsEXT,
+
+    // Shader tile image ops
+    EOpStencilAttachmentReadEXT, // Fragment only
+    EOpDepthAttachmentReadEXT, // Fragment only
+
+    // Image processing
+    EOpImageSampleWeightedQCOM,
+    EOpImageBoxFilterQCOM,
+    EOpImageBlockMatchSADQCOM,
+    EOpImageBlockMatchSSDQCOM,
+
+    // Image processing2
+    EOpImageBlockMatchWindowSSDQCOM,
+    EOpImageBlockMatchWindowSADQCOM,
+    EOpImageBlockMatchGatherSSDQCOM,
+    EOpImageBlockMatchGatherSADQCOM,
+};
+
+enum TLinkType {
+    ELinkNone,
+    ELinkExport,
 };
 
 class TIntermTraverser;
@@ -1027,31 +1153,31 @@ public:
     virtual const glslang::TSourceLoc& getLoc() const { return loc; }
     virtual void setLoc(const glslang::TSourceLoc& l) { loc = l; }
     virtual void traverse(glslang::TIntermTraverser*) = 0;
-    virtual       glslang::TIntermTyped*         getAsTyped()               { return 0; }
-    virtual       glslang::TIntermOperator*      getAsOperator()            { return 0; }
-    virtual       glslang::TIntermConstantUnion* getAsConstantUnion()       { return 0; }
-    virtual       glslang::TIntermAggregate*     getAsAggregate()           { return 0; }
-    virtual       glslang::TIntermUnary*         getAsUnaryNode()           { return 0; }
-    virtual       glslang::TIntermBinary*        getAsBinaryNode()          { return 0; }
-    virtual       glslang::TIntermSelection*     getAsSelectionNode()       { return 0; }
-    virtual       glslang::TIntermSwitch*        getAsSwitchNode()          { return 0; }
-    virtual       glslang::TIntermMethod*        getAsMethodNode()          { return 0; }
-    virtual       glslang::TIntermSymbol*        getAsSymbolNode()          { return 0; }
-    virtual       glslang::TIntermBranch*        getAsBranchNode()          { return 0; }
-    virtual       glslang::TIntermLoop*          getAsLoopNode()            { return 0; }
+    virtual       glslang::TIntermTyped*         getAsTyped()               { return nullptr; }
+    virtual       glslang::TIntermOperator*      getAsOperator()            { return nullptr; }
+    virtual       glslang::TIntermConstantUnion* getAsConstantUnion()       { return nullptr; }
+    virtual       glslang::TIntermAggregate*     getAsAggregate()           { return nullptr; }
+    virtual       glslang::TIntermUnary*         getAsUnaryNode()           { return nullptr; }
+    virtual       glslang::TIntermBinary*        getAsBinaryNode()          { return nullptr; }
+    virtual       glslang::TIntermSelection*     getAsSelectionNode()       { return nullptr; }
+    virtual       glslang::TIntermSwitch*        getAsSwitchNode()          { return nullptr; }
+    virtual       glslang::TIntermMethod*        getAsMethodNode()          { return nullptr; }
+    virtual       glslang::TIntermSymbol*        getAsSymbolNode()          { return nullptr; }
+    virtual       glslang::TIntermBranch*        getAsBranchNode()          { return nullptr; }
+    virtual       glslang::TIntermLoop*          getAsLoopNode()            { return nullptr; }
 
-    virtual const glslang::TIntermTyped*         getAsTyped()         const { return 0; }
-    virtual const glslang::TIntermOperator*      getAsOperator()      const { return 0; }
-    virtual const glslang::TIntermConstantUnion* getAsConstantUnion() const { return 0; }
-    virtual const glslang::TIntermAggregate*     getAsAggregate()     const { return 0; }
-    virtual const glslang::TIntermUnary*         getAsUnaryNode()     const { return 0; }
-    virtual const glslang::TIntermBinary*        getAsBinaryNode()    const { return 0; }
-    virtual const glslang::TIntermSelection*     getAsSelectionNode() const { return 0; }
-    virtual const glslang::TIntermSwitch*        getAsSwitchNode()    const { return 0; }
-    virtual const glslang::TIntermMethod*        getAsMethodNode()    const { return 0; }
-    virtual const glslang::TIntermSymbol*        getAsSymbolNode()    const { return 0; }
-    virtual const glslang::TIntermBranch*        getAsBranchNode()    const { return 0; }
-    virtual const glslang::TIntermLoop*          getAsLoopNode()      const { return 0; }
+    virtual const glslang::TIntermTyped*         getAsTyped()         const { return nullptr; }
+    virtual const glslang::TIntermOperator*      getAsOperator()      const { return nullptr; }
+    virtual const glslang::TIntermConstantUnion* getAsConstantUnion() const { return nullptr; }
+    virtual const glslang::TIntermAggregate*     getAsAggregate()     const { return nullptr; }
+    virtual const glslang::TIntermUnary*         getAsUnaryNode()     const { return nullptr; }
+    virtual const glslang::TIntermBinary*        getAsBinaryNode()    const { return nullptr; }
+    virtual const glslang::TIntermSelection*     getAsSelectionNode() const { return nullptr; }
+    virtual const glslang::TIntermSwitch*        getAsSwitchNode()    const { return nullptr; }
+    virtual const glslang::TIntermMethod*        getAsMethodNode()    const { return nullptr; }
+    virtual const glslang::TIntermSymbol*        getAsSymbolNode()    const { return nullptr; }
+    virtual const glslang::TIntermBranch*        getAsBranchNode()    const { return nullptr; }
+    virtual const glslang::TIntermLoop*          getAsLoopNode()      const { return nullptr; }
     virtual ~TIntermNode() { }
 
 protected:
@@ -1086,6 +1212,8 @@ public:
     virtual TBasicType getBasicType() const { return type.getBasicType(); }
     virtual TQualifier& getQualifier() { return type.getQualifier(); }
     virtual const TQualifier& getQualifier() const { return type.getQualifier(); }
+    virtual TArraySizes* getArraySizes() { return type.getArraySizes(); }
+    virtual const TArraySizes* getArraySizes() const { return type.getArraySizes(); }
     virtual void propagatePrecision(TPrecisionQualifier);
     virtual int getVectorSize() const { return type.getVectorSize(); }
     virtual int getMatrixCols() const { return type.getMatrixCols(); }
@@ -1097,7 +1225,9 @@ public:
     virtual bool isStruct() const { return type.isStruct(); }
     virtual bool isFloatingDomain() const { return type.isFloatingDomain(); }
     virtual bool isIntegerDomain() const { return type.isIntegerDomain(); }
-    TString getCompleteString() const { return type.getCompleteString(); }
+    bool isAtomic() const { return type.isAtomic(); }
+    bool isReference() const { return type.isReference(); }
+    TString getCompleteString(bool enhanced = false) const { return type.getCompleteString(enhanced); }
 
 protected:
     TIntermTyped& operator=(const TIntermTyped&);
@@ -1191,6 +1321,8 @@ public:
     virtual void traverse(TIntermTraverser*);
     TOperator getFlowOp() const { return flowOp; }
     TIntermTyped* getExpression() const { return expression; }
+    void setExpression(TIntermTyped* pExpression) { expression = pExpression; }
+    void updatePrecision(TPrecisionQualifier parentPrecision);
 protected:
     TOperator flowOp;
     TIntermTyped* expression;
@@ -1209,9 +1341,11 @@ public:
     virtual const TString& getMethodName() const { return method; }
     virtual TIntermTyped* getObject() const { return object; }
     virtual void traverse(TIntermTraverser*);
+    void setExport() { linkType = ELinkExport; }
 protected:
     TIntermTyped* object;
     TString method;
+    TLinkType linkType;
 };
 
 //
@@ -1222,15 +1356,10 @@ public:
     // if symbol is initialized as symbol(sym), the memory comes from the pool allocator of sym. If sym comes from
     // per process threadPoolAllocator, then it causes increased memory usage per compile
     // it is essential to use "symbol = sym" to assign to symbol
-    TIntermSymbol(int i, const TString& n, const TType& t)
-        : TIntermTyped(t), id(i),
-#ifdef ENABLE_HLSL
-        flattenSubset(-1),
-#endif
-        constSubtree(nullptr)
-          { name = n; }
-    virtual int getId() const { return id; }
-    virtual void changeId(int i) { id = i; }
+    TIntermSymbol(long long i, const TString& n, const TType& t)
+        : TIntermTyped(t), id(i), flattenSubset(-1), constSubtree(nullptr) { name = n; }
+    virtual long long getId() const { return id; }
+    virtual void changeId(long long i) { id = i; }
     virtual const TString& getName() const { return name; }
     virtual void traverse(TIntermTraverser*);
     virtual       TIntermSymbol* getAsSymbolNode()       { return this; }
@@ -1239,20 +1368,18 @@ public:
     const TConstUnionArray& getConstArray() const { return constArray; }
     void setConstSubtree(TIntermTyped* subtree) { constSubtree = subtree; }
     TIntermTyped* getConstSubtree() const { return constSubtree; }
-#ifdef ENABLE_HLSL
     void setFlattenSubset(int subset) { flattenSubset = subset; }
+    virtual const TString& getAccessName() const;
+
     int getFlattenSubset() const { return flattenSubset; } // -1 means full object
-#endif
 
     // This is meant for cases where a node has already been constructed, and
     // later on, it becomes necessary to switch to a different symbol.
-    virtual void switchId(int newId) { id = newId; }
+    virtual void switchId(long long newId) { id = newId; }
 
 protected:
-    int id;                      // the unique id of the symbol this node represents
-#ifdef ENABLE_HLSL
+    long long id;                // the unique id of the symbol this node represents
     int flattenSubset;           // how deeply the flattened object rooted at id has been dereferenced
-#endif
     TString name;                // the name of the symbol this node represents
     TConstUnionArray constArray; // if the symbol is a front-end compile-time constant, this is its value
     TIntermTyped* constSubtree;
@@ -1290,9 +1417,8 @@ struct TCrackedTextureOp {
     bool grad;
     bool subpass;
     bool lodClamp;
-#ifdef AMD_EXTENSIONS
     bool fragMask;
-#endif
+    bool attachmentEXT;
 };
 
 //
@@ -1310,10 +1436,9 @@ public:
     bool isSampling() const { return op > EOpSamplingGuardBegin && op < EOpSamplingGuardEnd; }
     bool isImage()    const { return op > EOpImageGuardBegin    && op < EOpImageGuardEnd; }
     bool isSparseTexture() const { return op > EOpSparseTextureGuardBegin && op < EOpSparseTextureGuardEnd; }
-#ifdef NV_EXTENSIONS
     bool isImageFootprint() const { return op > EOpImageFootprintGuardBegin && op < EOpImageFootprintGuardEnd; }
-#endif
     bool isSparseImage()   const { return op == EOpSparseImageLoad; }
+    bool isSubgroup() const { return op > EOpSubgroupGuardStart && op < EOpSubgroupGuardStop; }
 
     void setOperationPrecision(TPrecisionQualifier p) { operationPrecision = p; }
     TPrecisionQualifier getOperationPrecision() const { return operationPrecision != EpqNone ?
@@ -1342,10 +1467,9 @@ public:
         cracked.gather = false;
         cracked.grad = false;
         cracked.subpass = false;
+        cracked.attachmentEXT = false;
         cracked.lodClamp = false;
-#ifdef AMD_EXTENSIONS
         cracked.fragMask = false;
-#endif
 
         switch (op) {
         case EOpImageQuerySize:
@@ -1360,10 +1484,6 @@ public:
         case EOpTexture:
         case EOpSparseTexture:
             break;
-        case EOpTextureClamp:
-        case EOpSparseTextureClamp:
-            cracked.lodClamp = true;
-            break;
         case EOpTextureProj:
             cracked.proj = true;
             break;
@@ -1375,22 +1495,17 @@ public:
         case EOpSparseTextureOffset:
             cracked.offset = true;
             break;
-        case EOpTextureOffsetClamp:
-        case EOpSparseTextureOffsetClamp:
-            cracked.offset = true;
-            cracked.lodClamp = true;
-            break;
         case EOpTextureFetch:
         case EOpSparseTextureFetch:
             cracked.fetch = true;
-            if (sampler.dim == Esd1D || (sampler.dim == Esd2D && ! sampler.ms) || sampler.dim == Esd3D)
+            if (sampler.is1D() || (sampler.dim == Esd2D && ! sampler.isMultiSample()) || sampler.dim == Esd3D)
                 cracked.lod = true;
             break;
         case EOpTextureFetchOffset:
         case EOpSparseTextureFetchOffset:
             cracked.fetch = true;
             cracked.offset = true;
-            if (sampler.dim == Esd1D || (sampler.dim == Esd2D && ! sampler.ms) || sampler.dim == Esd3D)
+            if (sampler.is1D() || (sampler.dim == Esd2D && ! sampler.isMultiSample()) || sampler.dim == Esd3D)
                 cracked.lod = true;
             break;
         case EOpTextureProjOffset:
@@ -1415,11 +1530,6 @@ public:
         case EOpSparseTextureGrad:
             cracked.grad = true;
             break;
-        case EOpTextureGradClamp:
-        case EOpSparseTextureGradClamp:
-            cracked.grad = true;
-            cracked.lodClamp = true;
-            break;
         case EOpTextureGradOffset:
         case EOpSparseTextureGradOffset:
             cracked.grad = true;
@@ -1433,6 +1543,20 @@ public:
             cracked.grad = true;
             cracked.offset = true;
             cracked.proj = true;
+            break;
+        case EOpTextureClamp:
+        case EOpSparseTextureClamp:
+            cracked.lodClamp = true;
+            break;
+        case EOpTextureOffsetClamp:
+        case EOpSparseTextureOffsetClamp:
+            cracked.offset = true;
+            cracked.lodClamp = true;
+            break;
+        case EOpTextureGradClamp:
+        case EOpSparseTextureGradClamp:
+            cracked.grad = true;
+            cracked.lodClamp = true;
             break;
         case EOpTextureGradOffsetClamp:
         case EOpSparseTextureGradOffsetClamp:
@@ -1454,7 +1578,6 @@ public:
             cracked.gather = true;
             cracked.offsets = true;
             break;
-#ifdef AMD_EXTENSIONS
         case EOpTextureGatherLod:
         case EOpSparseTextureGatherLod:
             cracked.gather = true;
@@ -1485,8 +1608,6 @@ public:
             cracked.subpass = sampler.dim == EsdSubpass;
             cracked.fragMask = true;
             break;
-#endif
-#ifdef NV_EXTENSIONS
         case EOpImageSampleFootprintNV:
             break;
         case EOpImageSampleFootprintClampNV:
@@ -1502,10 +1623,12 @@ public:
             cracked.lodClamp = true;
             cracked.grad = true;
             break;
-#endif
         case EOpSubpassLoad:
         case EOpSubpassLoadMS:
             cracked.subpass = true;
+            break;
+        case EOpColorAttachmentReadEXT:
+            cracked.attachmentEXT = true;
             break;
         default:
             break;
@@ -1548,8 +1671,8 @@ protected:
 //
 class TIntermUnary : public TIntermOperator {
 public:
-    TIntermUnary(TOperator o, TType& t) : TIntermOperator(o, t), operand(0) {}
-    TIntermUnary(TOperator o) : TIntermOperator(o), operand(0) {}
+    TIntermUnary(TOperator o, TType& t) : TIntermOperator(o, t), operand(nullptr) {}
+    TIntermUnary(TOperator o) : TIntermOperator(o), operand(nullptr) {}
     virtual void traverse(TIntermTraverser*);
     virtual void setOperand(TIntermTyped* o) { operand = o; }
     virtual       TIntermTyped* getOperand() { return operand; }
@@ -1557,8 +1680,11 @@ public:
     virtual       TIntermUnary* getAsUnaryNode()       { return this; }
     virtual const TIntermUnary* getAsUnaryNode() const { return this; }
     virtual void updatePrecision();
+    void setSpirvInstruction(const TSpirvInstruction& inst) { spirvInst = inst; }
+    const TSpirvInstruction& getSpirvInstruction() const { return spirvInst; }
 protected:
     TIntermTyped* operand;
+    TSpirvInstruction spirvInst;
 };
 
 typedef TVector<TIntermNode*> TIntermSequence;
@@ -1573,6 +1699,7 @@ public:
     ~TIntermAggregate() { delete pragmaTable; }
     virtual       TIntermAggregate* getAsAggregate()       { return this; }
     virtual const TIntermAggregate* getAsAggregate() const { return this; }
+    virtual void updatePrecision();
     virtual void setOperator(TOperator o) { op = o; }
     virtual       TIntermSequence& getSequence()       { return sequence; }
     virtual const TIntermSequence& getSequence() const { return sequence; }
@@ -1589,6 +1716,11 @@ public:
     bool getDebug() const { return debug; }
     void setPragmaTable(const TPragmaTable& pTable);
     const TPragmaTable& getPragmaTable() const { return *pragmaTable; }
+    void setSpirvInstruction(const TSpirvInstruction& inst) { spirvInst = inst; }
+    const TSpirvInstruction& getSpirvInstruction() const { return spirvInst; }
+
+    void setLinkType(TLinkType l) { linkType = l; }
+    TLinkType getLinkType() const { return linkType; }
 protected:
     TIntermAggregate(const TIntermAggregate&); // disallow copy constructor
     TIntermAggregate& operator=(const TIntermAggregate&); // disallow assignment operator
@@ -1599,6 +1731,8 @@ protected:
     bool optimize;
     bool debug;
     TPragmaTable* pragmaTable;
+    TSpirvInstruction spirvInst;
+    TLinkType linkType = ELinkNone;
 };
 
 //
@@ -1616,8 +1750,11 @@ public:
         flatten(false), dontFlatten(false) {}
     virtual void traverse(TIntermTraverser*);
     virtual TIntermTyped* getCondition() const { return condition; }
+    virtual void setCondition(TIntermTyped* c) { condition = c; }
     virtual TIntermNode* getTrueBlock() const { return trueBlock; }
+    virtual void setTrueBlock(TIntermTyped* tb) { trueBlock = tb; }
     virtual TIntermNode* getFalseBlock() const { return falseBlock; }
+    virtual void setFalseBlock(TIntermTyped* fb) { falseBlock = fb; }
     virtual       TIntermSelection* getAsSelectionNode()       { return this; }
     virtual const TIntermSelection* getAsSelectionNode() const { return this; }
 
@@ -1733,7 +1870,7 @@ public:
 
     TIntermNode *getParentNode()
     {
-        return path.size() == 0 ? NULL : path.back();
+        return path.size() == 0 ? nullptr : path.back();
     }
 
     const bool preVisit;

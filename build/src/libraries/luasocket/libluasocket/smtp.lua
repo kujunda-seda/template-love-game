@@ -219,7 +219,7 @@ function send_message(mesgt)
     else send_string(mesgt) end
 end
 
--- set default headers
+-- set defaul headers
 local function adjust_headers(mesgt)
     local lower = lower_headers(mesgt.headers)
     lower["date"] = lower["date"] or

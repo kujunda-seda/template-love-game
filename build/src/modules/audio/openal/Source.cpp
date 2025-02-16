@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -176,13 +176,13 @@ Source::Source(Pool *pool, love::sound::Decoder *decoder)
 		slotlist.push(i);
 }
 
-Source::Source(Pool *pool, int sampleRate, int bitDepth, int channels, int buffers)
+Source::Source(Pool *pool, int sampleRate, int bitDepth, int channels, int b)
 	: love::audio::Source(Source::TYPE_QUEUE)
 	, pool(pool)
 	, sampleRate(sampleRate)
 	, channels(channels)
 	, bitDepth(bitDepth)
-	, buffers(buffers)
+	, buffers(b)
 {
 	ALenum fmt = Audio::getFormat(bitDepth, channels);
 	if (fmt == AL_NONE)

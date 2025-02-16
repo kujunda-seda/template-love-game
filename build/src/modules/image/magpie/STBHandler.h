@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -40,6 +40,8 @@ class STBHandler final : public FormatHandler
 {
 public:
 
+	virtual ~STBHandler() {}
+
 	// Implements FormatHandler.
 
 	bool canDecode(Data *data) override;
@@ -49,6 +51,7 @@ public:
 	EncodedImage encode(const DecodedImage &img, EncodedFormat format) override;
 
 	void freeRawPixels(unsigned char *mem) override;
+	void freeEncodedImage(unsigned char *mem) override;
 
 }; // STBHandler
 

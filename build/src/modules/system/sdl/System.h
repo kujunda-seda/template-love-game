@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -26,7 +26,7 @@
 #include "common/EnumMap.h"
 
 // SDL
-#include <SDL_power.h>
+#include <SDL3/SDL_power.h>
 
 namespace love
 {
@@ -42,15 +42,14 @@ public:
 	System();
 	virtual ~System() {}
 
-	// Implements Module.
-	const char *getName() const;
+	int getProcessorCount() const override;
 
-	int getProcessorCount() const;
+	void setClipboardText(const std::string &text) const override;
+	std::string getClipboardText() const override;
 
-	void setClipboardText(const std::string &text) const;
-	std::string getClipboardText() const;
-
-	PowerState getPowerInfo(int &seconds, int &percent) const;
+	PowerState getPowerInfo(int &seconds, int &percent) const override;
+	bool openURL(const std::string &url) const override;
+	std::vector<std::string> getPreferredLocales() const override;
 
 private:
 

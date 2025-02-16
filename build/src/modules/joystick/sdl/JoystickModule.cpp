@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -23,7 +23,7 @@
 #include "Joystick.h"
 
 // SDL
-#include <SDL.h>
+#include <SDL3/SDL.h>
 
 // C++
 #include <sstream>
@@ -40,18 +40,22 @@ namespace sdl
 {
 
 JoystickModule::JoystickModule()
+	: love::joystick::JoystickModule("love.joystick.sdl")
 {
-	if (SDL_InitSubSystem(SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER) < 0)
+	if (!SDL_InitSubSystem(SDL_INIT_JOYSTICK | SDL_INIT_GAMEPAD))
 		throw love::Exception("Could not initialize SDL joystick subsystem (%s)", SDL_GetError());
 
 	// Initialize any joysticks which are already connected.
-	for (int i = 0; i < SDL_NumJoysticks(); i++)
-		addJoystick(i);
+	int count = 0;
+	SDL_JoystickID *sticks = SDL_GetJoysticks(&count);
+	for (int i = 0; i < count; i++)
+		addJoystick((int64) sticks[i]);
+	SDL_free(sticks);
 
 	// Start joystick event watching. Joysticks are automatically added and
 	// removed via love.event.
-	SDL_JoystickEventState(SDL_ENABLE);
-	SDL_GameControllerEventState(SDL_ENABLE);
+	SDL_SetJoystickEventsEnabled(true);
+	SDL_SetGamepadEventsEnabled(true);
 }
 
 JoystickModule::~JoystickModule()
@@ -63,15 +67,7 @@ JoystickModule::~JoystickModule()
 		stick->release();
 	}
 
-	if (SDL_WasInit(SDL_INIT_HAPTIC) != 0)
-		SDL_QuitSubSystem(SDL_INIT_HAPTIC);
-
-	SDL_QuitSubSystem(SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER);
-}
-
-const char *JoystickModule::getName() const
-{
-	return "love.joystick.sdl";
+	SDL_QuitSubSystem(SDL_INIT_JOYSTICK | SDL_INIT_GAMEPAD);
 }
 
 love::joystick::Joystick *JoystickModule::getJoystick(int joyindex)
@@ -110,12 +106,12 @@ love::joystick::Joystick *JoystickModule::getJoystickFromID(int instanceid)
 	return nullptr;
 }
 
-love::joystick::Joystick *JoystickModule::addJoystick(int deviceindex)
+love::joystick::Joystick *JoystickModule::addJoystick(int64 deviceid)
 {
-	if (deviceindex < 0 || deviceindex >= SDL_NumJoysticks())
+	if (deviceid == 0)
 		return nullptr;
 
-	std::string guidstr = getDeviceGUID(deviceindex);
+	std::string guidstr = getDeviceGUID(deviceid);
 	joystick::Joystick *joystick = 0;
 	bool reused = false;
 
@@ -139,7 +135,7 @@ love::joystick::Joystick *JoystickModule::addJoystick(int deviceindex)
 	// Make sure the Joystick object isn't in the active list already.
 	removeJoystick(joystick);
 
-	if (!joystick->open(deviceindex))
+	if (!joystick->open(deviceid))
 		return nullptr;
 
 	// Make sure multiple instances of the same physical joystick aren't added
@@ -188,10 +184,10 @@ bool JoystickModule::setGamepadMapping(const std::string &guid, Joystick::Gamepa
 	if (guid.length() != 32)
 		throw love::Exception("Invalid joystick GUID: %s", guid.c_str());
 
-	SDL_JoystickGUID sdlguid = SDL_JoystickGetGUIDFromString(guid.c_str());
+	SDL_GUID sdlguid = SDL_StringToGUID(guid.c_str());
 	std::string mapstr;
 
-	char *sdlmapstr = SDL_GameControllerMappingForGUID(sdlguid);
+	char *sdlmapstr = SDL_GetGamepadMappingForGUID(sdlguid);
 	if (sdlmapstr)
 	{
 		mapstr = sdlmapstr;
@@ -259,16 +255,21 @@ bool JoystickModule::setGamepadMapping(const std::string &guid, Joystick::Gamepa
 		if (endpos == std::string::npos)
 			endpos = mapstr.length() - 1;
 
-		mapstr.replace(findpos + 1, endpos - findpos + 1, insertstr);
+		mapstr.replace(findpos + 1, endpos - findpos, insertstr);
 	}
 	else
 	{
-		// Just append to the end if we don't need to replace anything.
-		mapstr += insertstr;
+		// Just append to the end (or before the platform section if that exists),
+		// if we don't need to replace anything.
+		size_t platformpos = mapstr.find("platform:");
+		if (platformpos != std::string::npos)
+			mapstr.insert(platformpos, insertstr);
+		else
+			mapstr += insertstr;
 	}
 
 	// 1 == added, 0 == updated, -1 == error.
-	int status = SDL_GameControllerAddMapping(mapstr.c_str());
+	int status = SDL_AddGamepadMapping(mapstr.c_str());
 
 	if (status != -1)
 		recentGamepadGUIDs[guid] = true;
@@ -283,8 +284,8 @@ bool JoystickModule::setGamepadMapping(const std::string &guid, Joystick::Gamepa
 
 std::string JoystickModule::stringFromGamepadInput(Joystick::GamepadInput gpinput) const
 {
-	SDL_GameControllerAxis sdlaxis;
-	SDL_GameControllerButton sdlbutton;
+	SDL_GamepadAxis sdlaxis;
+	SDL_GamepadButton sdlbutton;
 
 	const char *gpinputname = nullptr;
 
@@ -292,11 +293,11 @@ std::string JoystickModule::stringFromGamepadInput(Joystick::GamepadInput gpinpu
 	{
 	case Joystick::INPUT_TYPE_AXIS:
 		if (Joystick::getConstant(gpinput.axis, sdlaxis))
-			gpinputname = SDL_GameControllerGetStringForAxis(sdlaxis);
+			gpinputname = SDL_GetGamepadStringForAxis(sdlaxis);
 		break;
 	case Joystick::INPUT_TYPE_BUTTON:
 		if (Joystick::getConstant(gpinput.button, sdlbutton))
-			gpinputname = SDL_GameControllerGetStringForButton(sdlbutton);
+			gpinputname = SDL_GetGamepadStringForButton(sdlbutton);
 		break;
 	default:
 		break;
@@ -346,12 +347,16 @@ void JoystickModule::checkGamepads(const std::string &guid) const
 
 	// Make sure all connected joysticks of a certain guid that are
 	// gamepad-capable are opened as such.
-	for (int d_index = 0; d_index < SDL_NumJoysticks(); d_index++)
+	int count = 0;
+	SDL_JoystickID *sdlsticks = SDL_GetJoysticks(&count);
+	for (int d_index = 0; d_index < count; d_index++)
 	{
-		if (!SDL_IsGameController(d_index))
+		if (!SDL_IsGamepad(sdlsticks[d_index]))
 			continue;
 
-		if (guid.compare(getDeviceGUID(d_index)) != 0)
+		auto sdlid = sdlsticks[d_index];
+
+		if (guid.compare(getDeviceGUID(sdlid)) != 0)
 			continue;
 
 		for (auto stick : activeSticks)
@@ -361,34 +366,34 @@ void JoystickModule::checkGamepads(const std::string &guid) const
 
 			// Big hack time: open the index as a game controller and compare
 			// the underlying joystick handle to the active stick's.
-			SDL_GameController *controller = SDL_GameControllerOpen(d_index);
+			SDL_Gamepad *controller = SDL_OpenGamepad(sdlid);
 			if (controller == nullptr)
 				continue;
 
 			// GameController objects are reference-counted in SDL, so we don't want to
 			// have a joystick open when trying to re-initialize it
-			SDL_Joystick *sdlstick = SDL_GameControllerGetJoystick(controller);
+			SDL_Joystick *sdlstick = SDL_GetGamepadJoystick(controller);
 			bool open_gamepad = (sdlstick == (SDL_Joystick *) stick->getHandle());
-			SDL_GameControllerClose(controller);
+			SDL_CloseGamepad(controller);
 
 			// open as gamepad if necessary
 			if (open_gamepad)
-				stick->openGamepad(d_index);
+				stick->openGamepad(sdlid);
 		}
 	}
 }
 
-std::string JoystickModule::getDeviceGUID(int deviceindex) const
+std::string JoystickModule::getDeviceGUID(int64 deviceid) const
 {
-	if (deviceindex < 0 || deviceindex >= SDL_NumJoysticks())
-		return std::string("");
-
 	// SDL_JoystickGetGUIDString uses 32 bytes plus the null terminator.
 	char guidstr[33] = {'\0'};
 
-	// SDL2's GUIDs identify *classes* of devices, instead of unique devices.
-	SDL_JoystickGUID guid = SDL_JoystickGetDeviceGUID(deviceindex);
-	SDL_JoystickGetGUIDString(guid, guidstr, sizeof(guidstr));
+	if (deviceid <= 0)
+		return std::string("");
+
+	// SDL's GUIDs identify *classes* of devices, instead of unique devices.
+	SDL_GUID guid = SDL_GetJoystickGUIDForID((SDL_JoystickID)deviceid);
+	SDL_GUIDToString(guid, guidstr, sizeof(guidstr));
 
 	return std::string(guidstr);
 }
@@ -433,7 +438,7 @@ void JoystickModule::loadGamepadMappings(const std::string &mappings)
 			mapping.erase(pstartpos, pendpos - pstartpos + 1);
 		}
 
-		if (SDL_GameControllerAddMapping(mapping.c_str()) != -1)
+		if (SDL_AddGamepadMapping(mapping.c_str()) != -1)
 		{
 			success = true;
 			std::string guid = mapping.substr(0, mapping.find_first_of(','));
@@ -453,9 +458,8 @@ void JoystickModule::loadGamepadMappings(const std::string &mappings)
 
 std::string JoystickModule::getGamepadMappingString(const std::string &guid) const
 {
-	SDL_JoystickGUID sdlguid = SDL_JoystickGetGUIDFromString(guid.c_str());
-
-	char *sdlmapping = SDL_GameControllerMappingForGUID(sdlguid);
+	SDL_GUID sdlguid = SDL_StringToGUID(guid.c_str());
+	char *sdlmapping = SDL_GetGamepadMappingForGUID(sdlguid);
 	if (sdlmapping == nullptr)
 		return "";
 
@@ -465,7 +469,9 @@ std::string JoystickModule::getGamepadMappingString(const std::string &guid) con
 	// Matches SDL_GameControllerAddMappingsFromRW.
 	if (mapping.find_last_of(',') != mapping.length() - 1)
 		mapping += ",";
-	mapping += "platform:" + std::string(SDL_GetPlatform());
+
+	if (mapping.find("platform:") == std::string::npos)
+		mapping += "platform:" + std::string(SDL_GetPlatform());
 
 	return mapping;
 }
@@ -476,9 +482,8 @@ std::string JoystickModule::saveGamepadMappings()
 
 	for (const auto &g : recentGamepadGUIDs)
 	{
-		SDL_JoystickGUID sdlguid = SDL_JoystickGetGUIDFromString(g.first.c_str());
-
-		char *sdlmapping = SDL_GameControllerMappingForGUID(sdlguid);
+		SDL_GUID sdlguid = SDL_StringToGUID(g.first.c_str());
+		char *sdlmapping = SDL_GetGamepadMappingForGUID(sdlguid);
 		if (sdlmapping == nullptr)
 			continue;
 
@@ -489,8 +494,10 @@ std::string JoystickModule::saveGamepadMappings()
 			mapping += ",";
 
 		// Matches SDL_GameControllerAddMappingsFromRW.
-		mapping += "platform:" + std::string(SDL_GetPlatform()) + ",\n";
-		mappings += mapping;
+		if (mapping.find("platform:") == std::string::npos)
+			mapping += "platform:" + std::string(SDL_GetPlatform()) + ",";
+
+		mappings += mapping + "\n";
 	}
 
 	return mappings;

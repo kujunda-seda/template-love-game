@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -27,6 +27,7 @@
 
 #include "Filesystem.h"
 #include "File.h"
+#include "PhysfsIo.h"
 
 // PhysFS
 #include "libraries/physfs/physfs.h"
@@ -35,61 +36,35 @@
 // Using this instead of boost::filesystem which totally
 // cramped our style.
 #ifdef LOVE_WINDOWS
+#	define WIN32_LEAN_AND_MEAN
 #	include <windows.h>
 #	include <direct.h>
+#	include <initguid.h>
+#	include <Shlobj.h>
+#	include <Knownfolders.h>
 #else
 #	include <sys/param.h>
 #	include <unistd.h>
+#endif
+
+#if defined(LOVE_IOS) || defined(LOVE_MACOS)
+#	include "common/apple.h"
 #endif
 
 #ifdef LOVE_IOS
 #	include "common/ios.h"
 #endif
 
+#ifdef LOVE_MACOS
+#	include "common/macos.h"
+#endif
+
 #include <string>
 
 #ifdef LOVE_ANDROID
-#include <SDL.h>
+#include <SDL3/SDL.h>
 #include "common/android.h"
 #endif
-
-namespace
-{
-	size_t getDriveDelim(const std::string &input)
-	{
-		for (size_t i = 0; i < input.size(); ++i)
-			if (input[i] == '/' || input[i] == '\\')
-				return i;
-		// Something's horribly wrong
-		return 0;
-	}
-
-	std::string getDriveRoot(const std::string &input)
-	{
-		return input.substr(0, getDriveDelim(input)+1);
-	}
-
-	std::string skipDriveRoot(const std::string &input)
-	{
-		return input.substr(getDriveDelim(input)+1);
-	}
-
-	std::string normalize(const std::string &input)
-	{
-		std::stringstream out;
-		bool seenSep = false, isSep = false;
-		for (size_t i = 0; i < input.size(); ++i)
-		{
-			isSep = (input[i] == LOVE_PATH_SEPARATOR[0]);
-			if (!isSep || !seenSep)
-				out << input[i];
-			seenSep = isSep;
-		}
-
-		return out.str();
-	}
-
-}
 
 namespace love
 {
@@ -98,9 +73,68 @@ namespace filesystem
 namespace physfs
 {
 
+static std::string normalize(const std::string &input)
+{
+	std::stringstream out;
+	bool seenSep = false, isSep = false;
+	for (size_t i = 0; i < input.size(); ++i)
+	{
+		isSep = (input[i] == LOVE_PATH_SEPARATOR[0]);
+		if (!isSep || !seenSep)
+			out << input[i];
+		seenSep = isSep;
+	}
+
+	return out.str();
+}
+
+static const Filesystem::CommonPath appCommonPaths[] =
+{
+	Filesystem::COMMONPATH_APP_SAVEDIR,
+	Filesystem::COMMONPATH_APP_DOCUMENTS
+};
+
+static bool isAppCommonPath(Filesystem::CommonPath path)
+{
+	switch (path)
+	{
+	case Filesystem::COMMONPATH_APP_SAVEDIR:
+	case Filesystem::COMMONPATH_APP_DOCUMENTS:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static bool isMounted(const std::string &path)
+{
+	char **mountedpaths = PHYSFS_getSearchPath();
+	if (mountedpaths == nullptr)
+		return false;
+
+	bool mounted = false;
+	for (char **p = mountedpaths; *p != nullptr; p++)
+	{
+		char *mountedpath = *p;
+		if (strcmp(path.c_str(), mountedpath) == 0)
+		{
+			mounted = true;
+			break;
+		}
+	}
+
+	PHYSFS_freeList(mountedpaths);
+	return mounted;
+}
+
 Filesystem::Filesystem()
-	: fused(false)
+	: love::filesystem::Filesystem("love.filesystem.physfs")
+	, appendIdentityToPath(false)
+	, fused(false)
 	, fusedSet(false)
+	, fullPaths()
+	, commonPathMountInfo()
+	, saveDirectoryNeedsMounting(false)
 {
 	requirePath = {"?.lua", "?/init.lua"};
 	cRequirePath = {"??"};
@@ -116,13 +150,12 @@ Filesystem::~Filesystem()
 		PHYSFS_deinit();
 }
 
-const char *Filesystem::getName() const
-{
-	return "love.filesystem.physfs";
-}
-
 void Filesystem::init(const char *arg0)
 {
+#ifdef LOVE_ANDROID
+	arg0 = love::android::getArg0();
+#endif
+
 	if (!PHYSFS_init(arg0))
 		throw love::Exception("Failed to initialize filesystem: %s", PHYSFS_getErrorByCode(PHYSFS_getLastErrorCode()));
 
@@ -145,72 +178,82 @@ bool Filesystem::isFused() const
 	return fused;
 }
 
-bool Filesystem::setIdentity(const char *ident, bool appendToPath) 
+bool Filesystem::setIdentity(const char *ident, bool appendToPath)
 {
 	if (!PHYSFS_isInit())
 		return false;
 
-	std::string old_save_path = save_path_full;
+	if (ident == nullptr || strlen(ident) == 0)
+		return false;
 
-	// Store the save directory.
-	save_identity = std::string(ident);
+	// Validate whether re-mounting will work.
+	for (CommonPath p : appCommonPaths)
+	{
+		if (!commonPathMountInfo[p].mounted)
+			continue;
 
-	// Generate the relative path to the game save folder.
-	save_path_relative = std::string(LOVE_APPDATA_PREFIX LOVE_APPDATA_FOLDER LOVE_PATH_SEPARATOR) + save_identity;
+		// If a file is still open, unmount will fail.
+		std::string fullpath = getFullCommonPath(p);
+		
+		if (!fullpath.empty())
+		{
+			std::string canonpath = canonicalizeRealPath(fullpath);
+			if (!PHYSFS_canUnmount(canonpath.c_str()))
+				return false;
+		}
+	}
 
-	// Generate the full path to the game save folder.
-	save_path_full = std::string(getAppdataDirectory()) + std::string(LOVE_PATH_SEPARATOR);
-	if (fused)
-		save_path_full += std::string(LOVE_APPDATA_PREFIX) + save_identity;
-	else
-		save_path_full += save_path_relative;
+	bool oldMountedCommonPaths[COMMONPATH_MAX_ENUM] = {false};
 
-	save_path_full = normalize(save_path_full);	
-	
+	// We don't want old save paths to accumulate when we set a new identity.
+	for (CommonPath p : appCommonPaths)
+	{
+		oldMountedCommonPaths[p] = commonPathMountInfo[p].mounted;
+		if (commonPathMountInfo[p].mounted)
+			unmount(p);
+	}
+
+	// These will be re-populated by getFullCommonPath.
+	for (CommonPath p : appCommonPaths)
+		fullPaths[p].clear();
 #ifdef LOVE_ANDROID
-	if (save_identity == "")
-		save_identity = "unnamed";
-
-	std::string storage_path;
-	if (isAndroidSaveExternal())
-		storage_path = SDL_AndroidGetExternalStoragePath();
-	else
-		storage_path = SDL_AndroidGetInternalStoragePath();
-
-	std::string save_directory = storage_path + "/save";
-
-	save_path_full = storage_path + std::string("/save/") + save_identity;
-
-	if (!love::android::directoryExists(save_path_full.c_str()) &&
-			!love::android::mkdir(save_path_full.c_str()))
-		SDL_Log("Error: Could not create save directory %s!", save_path_full.c_str());
+	// Ensure COMMONPATH_USER_APPDATA is also cleared in Android to ensure
+	// `t.externalstorage` works as expected.
+	fullPaths[COMMONPATH_USER_APPDATA].clear();
 #endif
 
-	// We now have something like:
-	// save_identity: game
-	// save_path_relative: ./LOVE/game
-	// save_path_full: C:\Documents and Settings\user\Application Data/LOVE/game
+	// Store the save directory. getFullCommonPath(COMMONPATH_APP_*) uses this.
+	saveIdentity = std::string(ident);
+	appendIdentityToPath = appendToPath;
 
-	// We don't want old read-only save paths to accumulate when we set a new
-	// identity.
-	if (!old_save_path.empty())
-		PHYSFS_unmount(old_save_path.c_str());
+	// Try to mount as readwrite without creating missing directories in the
+	// path hierarchy. If this fails, setupWriteDirectory will attempt to create
+	// them and try again.
+	// This is done so the save directory is only created on-demand.
+	if (!mountCommonPathInternal(COMMONPATH_APP_SAVEDIR, nullptr, MOUNT_PERMISSIONS_READWRITE, appendToPath, false))
+		saveDirectoryNeedsMounting = true;
+	else
+		saveDirectoryNeedsMounting = false;
 
-	// Try to add the save directory to the search path.
-	// (No error on fail, it means that the path doesn't exist).
-	PHYSFS_mount(save_path_full.c_str(), nullptr, appendToPath);
-
-	// HACK: This forces setupWriteDirectory to be called the next time a file
-	// is opened for writing - otherwise it won't be called at all if it was
-	// already called at least once before.
-	PHYSFS_setWriteDir(nullptr);
+	// Mount any other app common paths with directory creation immediately
+	// instead of on-demand, since to get to this point they would have to be
+	// explicitly mounted already beforehand.
+	for (CommonPath p : appCommonPaths)
+	{
+		if (oldMountedCommonPaths[p] && p != COMMONPATH_APP_SAVEDIR)
+		{
+			// TODO: error handling?
+			auto info = commonPathMountInfo[p];
+			mountCommonPathInternal(p, info.mountPoint.c_str(), info.permissions, appendToPath, true);
+		}
+	}
 
 	return true;
 }
 
 const char *Filesystem::getIdentity() const
 {
-	return save_identity.c_str();
+	return saveIdentity.c_str();
 }
 
 bool Filesystem::setSource(const char *source)
@@ -219,16 +262,14 @@ bool Filesystem::setSource(const char *source)
 		return false;
 
 	// Check whether directory is already set.
-	if (!game_source.empty())
+	if (!gameSource.empty())
 		return false;
 
-	std::string new_search_path = source;
+	std::string new_search_path = canonicalizeRealPath(source);
 
 #ifdef LOVE_ANDROID
 	if (!love::android::createStorageDirectories())
 		SDL_Log("Error creating storage directories!");
-
-	new_search_path = "";
 
 	PHYSFS_Io *gameLoveIO;
 	bool hasFusedGame = love::android::checkFusedGame((void **) &gameLoveIO);
@@ -237,8 +278,14 @@ bool Filesystem::setSource(const char *source)
 	if (hasFusedGame)
 	{
 		if (gameLoveIO)
-			// Actually we should just be able to mount gameLoveIO, but that's experimental.
+		{
+			if (PHYSFS_mountIo(gameLoveIO, ".zip", nullptr, 0)) {
+				gameSource = new_search_path;
+				return true;
+			}
+
 			gameLoveIO->destroy(gameLoveIO);
+		}
 		else
 		{
 			if (!love::android::initializeVirtualArchive())
@@ -255,48 +302,55 @@ bool Filesystem::setSource(const char *source)
 
 	if (!isAAssetMounted)
 	{
-		new_search_path = love::android::getSelectedGameFile();
+		// Is this content:// URIs?
+		auto io = (PHYSFS_Io *) love::android::getIOFromContentProtocol(source);
 
-		// try mounting first, if that fails, load to memory and mount
-		if (!PHYSFS_mount(new_search_path.c_str(), nullptr, 1))
+		if (PHYSFS_mountIo(io, "LOVE.FD", nullptr, 0))
 		{
-			// PHYSFS cannot yet mount a zip file inside an .apk
-			SDL_Log("Mounting %s did not work. Loading to memory.",
-					new_search_path.c_str());
-			char* game_archive_ptr = NULL;
-			size_t game_archive_size = 0;
-			if (!love::android::loadGameArchiveToMemory(
-						new_search_path.c_str(), &game_archive_ptr,
-						&game_archive_size))
-			{
-				SDL_Log("Failure memory loading archive %s", new_search_path.c_str());
-				return false;
-			}
-			if (!PHYSFS_mountMemory(
-					game_archive_ptr, game_archive_size,
-					love::android::freeGameArchiveMemory, "archive.zip", "/", 0))
-			{
-				SDL_Log("Failure mounting in-memory archive.");
-				love::android::freeGameArchiveMemory(game_archive_ptr);
-				return false;
-			}
+			gameSource = source;
+			return true;
 		}
+
+		io->destroy(io);
 	}
-#else
-	// Add the directory.
-	if (!PHYSFS_mount(new_search_path.c_str(), nullptr, 1))
-		return false;
 #endif
 
+	if (isMounted(new_search_path))
+		return false;
+
+	// Add the directory.
+	if (!PHYSFS_mount(new_search_path.c_str(), nullptr, 1))
+	{
+		// It's possible there is additional data at the end of the fused executable,
+		// e.g. for signed windows executables (the signature).
+		// In this case let's try a little bit harder to find the zip file.
+		// This is not used by default because I assume that the physfs IOs are probably
+		// more robust and more performant, so they should be favored, if possible.
+		auto io = StripSuffixIo::create(new_search_path);
+		if (!io->determineStrippedLength())
+		{
+			delete io;
+			return false;
+		}
+		if (!PHYSFS_mountIo(io, io->filename.c_str(), nullptr, 1))
+		{
+			// If PHYSFS_mountIo fails, io->destroy(io) is not called and we have
+			// to delete ourselves.
+			delete io;
+			return false;
+		}
+		return true;
+	}
+
 	// Save the game source.
-	game_source = new_search_path;
+	gameSource = new_search_path;
 
 	return true;
 }
 
 const char *Filesystem::getSource() const
 {
-	return game_source.c_str();
+	return gameSource.c_str();
 }
 
 bool Filesystem::setupWriteDirectory()
@@ -304,54 +358,19 @@ bool Filesystem::setupWriteDirectory()
 	if (!PHYSFS_isInit())
 		return false;
 
-	// These must all be set.
-	if (save_identity.empty() || save_path_full.empty() || save_path_relative.empty())
+	if (!saveDirectoryNeedsMounting)
+		return true;
+
+	if (saveIdentity.empty())
 		return false;
 
-	// We need to make sure the write directory is created. To do that, we also
-	// need to make sure all its parent directories are also created.
-	std::string temp_writedir = getDriveRoot(save_path_full);
-	std::string temp_createdir = skipDriveRoot(save_path_full);
-
-	// On some sandboxed platforms, physfs will break when its write directory
-	// is the root of the drive and it tries to create a folder (even if the
-	// folder's path is in a writable location.) If the user's home folder is
-	// in the save path, we'll try starting from there instead.
-	if (save_path_full.find(getUserDirectory()) == 0)
-	{
-		temp_writedir = getUserDirectory();
-		temp_createdir = save_path_full.substr(getUserDirectory().length());
-
-		// Strip leading '/' characters from the path we want to create.
-		size_t startpos = temp_createdir.find_first_not_of('/');
-		if (startpos != std::string::npos)
-			temp_createdir = temp_createdir.substr(startpos);
-	}
-
-	// Set either '/' or the user's home as a writable directory.
-	// (We must create the save folder before mounting it).
-	if (!PHYSFS_setWriteDir(temp_writedir.c_str()))
+	// Only the save directory is mounted on-demand if it doesn't exist yet.
+	// Other app common paths are immediately re-mounted in setIdentity.
+	bool createdir = true;
+	if (!mountCommonPathInternal(COMMONPATH_APP_SAVEDIR, nullptr, MOUNT_PERMISSIONS_READWRITE, appendIdentityToPath, createdir))
 		return false;
 
-	// Create the save folder. (We're now "at" either '/' or the user's home).
-	if (!createDirectory(temp_createdir.c_str()))
-	{
-		// Clear the write directory in case of error.
-		PHYSFS_setWriteDir(nullptr);
-		return false;
-	}
-
-	// Set the final write directory.
-	if (!PHYSFS_setWriteDir(save_path_full.c_str()))
-		return false;
-
-	// Add the directory. (Will not be readded if already present).
-	if (!PHYSFS_mount(save_path_full.c_str(), nullptr, 0))
-	{
-		PHYSFS_setWriteDir(nullptr); // Clear the write directory in case of error.
-		return false;
-	}
-
+	saveDirectoryNeedsMounting = false;
 	return true;
 }
 
@@ -388,22 +407,84 @@ bool Filesystem::mount(const char *archive, const char *mountpoint, bool appendT
 
 		// Always disallow mounting of files inside the game source, since it
 		// won't work anyway if the game source is a zipped .love file.
-		if (realPath.find(game_source) == 0)
+		if (realPath.find(gameSource) == 0)
 			return false;
 
 		realPath += LOVE_PATH_SEPARATOR;
 		realPath += archive;
 	}
 
-	if (realPath.length() == 0)
+	return mountFullPath(realPath.c_str(), mountpoint, MOUNT_PERMISSIONS_READ, appendToPath);
+}
+
+bool Filesystem::mountFullPath(const char *archive, const char *mountpoint, MountPermissions permissions, bool appendToPath)
+{
+	if (!PHYSFS_isInit() || !archive)
 		return false;
 
-	return PHYSFS_mount(realPath.c_str(), mountpoint, appendToPath) != 0;
+	std::string canonarchive = canonicalizeRealPath(archive);
+
+	if (isMounted(canonarchive))
+		return false;
+
+#ifdef LOVE_ANDROID
+	if (strncmp(archive, "content://", 10) == 0)
+	{
+		if (permissions == MOUNT_PERMISSIONS_READWRITE)
+			// Currently there's no way content:// URIs we got are for read-write.
+			// TODO: Re-evaluate this in the future, maybe?
+			return false;
+
+		auto io = (PHYSFS_Io *) love::android::getIOFromContentProtocol(archive);
+		if (!io)
+			return false;
+
+		if (PHYSFS_mountIo(io, canonarchive.c_str(), mountpoint, appendToPath))
+			return true;
+
+		io->destroy(io);
+	}
+#endif
+
+	if (permissions == MOUNT_PERMISSIONS_READWRITE)
+		return PHYSFS_mountRW(canonarchive.c_str(), mountpoint, appendToPath) != 0;
+
+	return PHYSFS_mount(canonarchive.c_str(), mountpoint, appendToPath) != 0;
+}
+
+bool Filesystem::mountCommonPathInternal(CommonPath path, const char *mountpoint, MountPermissions permissions, bool appendToPath, bool createDir)
+{
+	std::string fullpath = getFullCommonPath(path);
+	if (fullpath.empty())
+		return false;
+
+	if (createDir && isAppCommonPath(path) && !isRealDirectory(fullpath))
+	{
+		if (!createRealDirectory(fullpath))
+			return false;
+	}
+
+	if (mountFullPath(fullpath.c_str(), mountpoint, permissions, appendToPath))
+	{
+		std::string mp = mountpoint != nullptr ? mountpoint : "/";
+		commonPathMountInfo[path] = {true, mp, permissions};
+		return true;
+	}
+
+	return false;
+}
+
+bool Filesystem::mountCommonPath(CommonPath path, const char *mountpoint, MountPermissions permissions, bool appendToPath)
+{
+	return mountCommonPathInternal(path, mountpoint, permissions, appendToPath, true);
 }
 
 bool Filesystem::mount(Data *data, const char *archivename, const char *mountpoint, bool appendToPath)
 {
 	if (!PHYSFS_isInit())
+		return false;
+
+	if (isMounted(archivename))
 		return false;
 
 	if (PHYSFS_mountMemory(data->getData(), data->getSize(), nullptr, archivename, mountpoint, appendToPath) != 0)
@@ -428,40 +509,54 @@ bool Filesystem::unmount(const char *archive)
 		return true;
 	}
 
-	std::string realPath;
-	std::string sourceBase = getSourceBaseDirectory();
-
-	// Check whether the given archive path is in the list of allowed full paths.
 	auto it = std::find(allowedMountPaths.begin(), allowedMountPaths.end(), archive);
-
 	if (it != allowedMountPaths.end())
-		realPath = *it;
-	else if (isFused() && sourceBase.compare(archive) == 0)
-	{
-		// Special case: if the game is fused and the archive is the source's
-		// base directory, unmount it even though it's outside of the save dir.
-		realPath = sourceBase;
-	}
-	else
-	{
-		// Not allowed for safety reasons.
-		if (strlen(archive) == 0 || strstr(archive, "..") || strcmp(archive, "/") == 0)
-			return false;
+		return unmountFullPath(archive);
 
-		const char *realDir = PHYSFS_getRealDir(archive);
-		if (!realDir)
-			return false;
+	std::string sourceBase = getSourceBaseDirectory();
+	if (isFused() && sourceBase.compare(archive) == 0)
+		return unmountFullPath(archive);
 
-		realPath = realDir;
-		realPath += LOVE_PATH_SEPARATOR;
-		realPath += archive;
-	}
-
-	const char *mountPoint = PHYSFS_getMountPoint(realPath.c_str());
-	if (!mountPoint)
+	if (strlen(archive) == 0 || strstr(archive, "..") || strcmp(archive, "/") == 0)
 		return false;
 
-	return PHYSFS_unmount(realPath.c_str()) != 0;
+	const char *realDir = PHYSFS_getRealDir(archive);
+	if (!realDir)
+		return false;
+
+	std::string realPath = realDir;
+	realPath += LOVE_PATH_SEPARATOR;
+	realPath += archive;
+
+	std::string canonpath = canonicalizeRealPath(realPath.c_str());
+
+	if (PHYSFS_getMountPoint(canonpath.c_str()) == nullptr)
+		return false;
+
+	return PHYSFS_unmount(canonpath.c_str()) != 0;
+}
+
+bool Filesystem::unmountFullPath(const char *fullpath)
+{
+	if (!PHYSFS_isInit() || !fullpath)
+		return false;
+
+	std::string canonpath = canonicalizeRealPath(fullpath);
+
+	return PHYSFS_unmount(canonpath.c_str()) != 0;
+}
+
+bool Filesystem::unmount(CommonPath path)
+{
+	std::string fullpath = getFullCommonPath(path);
+
+	if (!fullpath.empty() && unmountFullPath(fullpath.c_str()))
+	{
+		commonPathMountInfo[path].mounted = false;
+		return true;
+	}
+
+	return false;
 }
 
 bool Filesystem::unmount(Data *data)
@@ -478,9 +573,174 @@ bool Filesystem::unmount(Data *data)
 	return false;
 }
 
-love::filesystem::File *Filesystem::newFile(const char *filename) const
+love::filesystem::File *Filesystem::openFile(const char *filename, File::Mode mode) const
 {
-	return new File(filename);
+	return new File(filename, mode);
+}
+
+std::string Filesystem::getFullCommonPath(CommonPath path)
+{
+	if (!fullPaths[path].empty())
+		return fullPaths[path];
+
+	if (isAppCommonPath(path))
+	{
+		if (saveIdentity.empty())
+			return fullPaths[path];
+
+		std::string rootpath;
+		switch (path)
+		{
+		case COMMONPATH_APP_SAVEDIR:
+			rootpath = getFullCommonPath(COMMONPATH_USER_APPDATA);
+			break;
+		case COMMONPATH_APP_DOCUMENTS:
+			rootpath = getFullCommonPath(COMMONPATH_USER_DOCUMENTS);
+			break;
+		default:
+			break;
+		}
+
+		if (rootpath.empty())
+			return fullPaths[path];
+
+		std::string suffix;
+		if (isFused())
+			suffix = std::string(LOVE_PATH_SEPARATOR) + saveIdentity;
+		else
+			suffix = std::string(LOVE_PATH_SEPARATOR LOVE_APPDATA_FOLDER LOVE_PATH_SEPARATOR) + saveIdentity;
+
+		// TODO: do we still need the normalize?
+		fullPaths[path] = normalize(rootpath + suffix);
+		fullPaths[path] = canonicalizeRealPath(fullPaths[path].c_str());
+
+		return fullPaths[path];
+	}
+
+#if defined(LOVE_MACOS) || defined(LOVE_IOS)
+
+	switch (path)
+	{
+	case COMMONPATH_APP_SAVEDIR:
+	case COMMONPATH_APP_DOCUMENTS:
+		// Handled above.
+		break;
+	case COMMONPATH_USER_HOME:
+		fullPaths[path] = apple::getUserDirectory(apple::USER_DIRECTORY_HOME);
+		break;
+	case COMMONPATH_USER_APPDATA:
+		fullPaths[path] = apple::getUserDirectory(apple::USER_DIRECTORY_APPSUPPORT);
+		break;
+	case COMMONPATH_USER_DESKTOP:
+		fullPaths[path] = apple::getUserDirectory(apple::USER_DIRECTORY_DESKTOP);
+		break;
+	case COMMONPATH_USER_DOCUMENTS:
+		fullPaths[path] = apple::getUserDirectory(apple::USER_DIRECTORY_DOCUMENTS);
+		break;
+	case COMMONPATH_MAX_ENUM:
+		break;
+	}
+
+#elif defined(LOVE_WINDOWS)
+
+	PWSTR winpath = nullptr;
+	HRESULT hr = E_FAIL;
+
+	switch (path)
+	{
+	case COMMONPATH_APP_SAVEDIR:
+	case COMMONPATH_APP_DOCUMENTS:
+		// Handled above.
+		break;
+	case COMMONPATH_USER_HOME:
+		hr = SHGetKnownFolderPath(FOLDERID_Profile, 0, nullptr, &winpath);
+		break;
+	case COMMONPATH_USER_APPDATA:
+		hr = SHGetKnownFolderPath(FOLDERID_RoamingAppData, 0, nullptr, &winpath);
+		break;
+	case COMMONPATH_USER_DESKTOP:
+		hr = SHGetKnownFolderPath(FOLDERID_Desktop, 0, nullptr, &winpath);
+		break;
+	case COMMONPATH_USER_DOCUMENTS:
+		hr = SHGetKnownFolderPath(FOLDERID_Documents, 0, nullptr, &winpath);
+		break;
+	case COMMONPATH_MAX_ENUM:
+		break;
+	}
+
+	if (SUCCEEDED(hr))
+	{
+		fullPaths[path] = to_utf8(winpath);
+		CoTaskMemFree(winpath);
+	}
+
+#elif defined(LOVE_ANDROID)
+
+	std::string storagepath;
+    if (isAndroidSaveExternal())
+        storagepath = SDL_GetAndroidExternalStoragePath();
+    else
+        storagepath = SDL_GetAndroidInternalStoragePath();
+
+	switch (path)
+	{
+	case COMMONPATH_APP_SAVEDIR:
+	case COMMONPATH_APP_DOCUMENTS:
+		// Handled above.
+		break;
+	case COMMONPATH_USER_HOME:
+		fullPaths[path] = normalize(PHYSFS_getUserDir());
+		break;
+	case COMMONPATH_USER_APPDATA:
+		fullPaths[path] = normalize(storagepath + "/save/");
+		break;
+	case COMMONPATH_USER_DESKTOP:
+		// No such thing on Android?
+		break;
+	case COMMONPATH_USER_DOCUMENTS:
+		// TODO: something more idiomatic / useful?
+		fullPaths[path] = normalize(storagepath + "/Documents/");
+		break;
+	case COMMONPATH_MAX_ENUM:
+		break;
+	}
+
+#elif defined(LOVE_LINUX)
+
+	const char *xdgdir = nullptr;
+
+	switch (path)
+	{
+	case COMMONPATH_APP_SAVEDIR:
+	case COMMONPATH_APP_DOCUMENTS:
+		// Handled above.
+		break;
+	case COMMONPATH_USER_HOME:
+		fullPaths[path] = normalize(PHYSFS_getUserDir());
+		break;
+	case COMMONPATH_USER_APPDATA:
+		xdgdir = getenv("XDG_DATA_HOME");
+		if (!xdgdir)
+			fullPaths[path] = normalize(std::string(getUserDirectory()) + "/.local/share/");
+		else
+			fullPaths[path] = xdgdir;
+		break;
+	case COMMONPATH_USER_DESKTOP:
+		fullPaths[path] = normalize(std::string(getUserDirectory()) + "/Desktop/");
+		break;
+	case COMMONPATH_USER_DOCUMENTS:
+		fullPaths[path] = normalize(std::string(getUserDirectory()) + "/Documents/");
+		break;
+	case COMMONPATH_MAX_ENUM:
+		break;
+	}
+
+#endif
+
+	if (!fullPaths[path].empty())
+		fullPaths[path] = canonicalizeRealPath(fullPaths[path].c_str());
+
+	return fullPaths[path];
 }
 
 const char *Filesystem::getWorkingDirectory()
@@ -499,7 +759,7 @@ const char *Filesystem::getWorkingDirectory()
 		if (getcwd(cwd_char, LOVE_MAX_PATH))
 			cwd = cwd_char; // if getcwd fails, cwd_char (and thus cwd) will still be empty
 
-		delete [] cwd_char;
+		delete[] cwd_char;
 #endif
 	}
 
@@ -508,65 +768,31 @@ const char *Filesystem::getWorkingDirectory()
 
 std::string Filesystem::getUserDirectory()
 {
-#ifdef LOVE_IOS
-	// PHYSFS_getUserDir doesn't give exactly the path we want on iOS.
-	static std::string userDir = normalize(love::ios::getHomeDirectory());
-#else
-	static std::string userDir = normalize(PHYSFS_getUserDir());
-#endif
-
-	return userDir;
+	return getFullCommonPath(COMMONPATH_USER_HOME);
 }
 
 std::string Filesystem::getAppdataDirectory()
 {
-	if (appdata.empty())
-	{
-#ifdef LOVE_WINDOWS_UWP
-		appdata = getUserDirectory();
-#elif defined(LOVE_WINDOWS)
-		wchar_t *w_appdata = _wgetenv(L"APPDATA");
-		appdata = to_utf8(w_appdata);
-		replace_char(appdata, '\\', '/');
-#elif defined(LOVE_MACOSX)
-		std::string udir = getUserDirectory();
-		udir.append("/Library/Application Support");
-		appdata = normalize(udir);
-#elif defined(LOVE_IOS)
-		appdata = normalize(love::ios::getAppdataDirectory());
-#elif defined(LOVE_LINUX)
-		char *xdgdatahome = getenv("XDG_DATA_HOME");
-		if (!xdgdatahome)
-			appdata = normalize(std::string(getUserDirectory()) + "/.local/share/");
-		else
-			appdata = xdgdatahome;
-#else
-		appdata = getUserDirectory();
-#endif
-	}
-	return appdata;
+	return getFullCommonPath(COMMONPATH_USER_APPDATA);
 }
 
-
-const char *Filesystem::getSaveDirectory()
+std::string Filesystem::getSaveDirectory()
 {
-	return save_path_full.c_str();
+	return getFullCommonPath(COMMONPATH_APP_SAVEDIR);
 }
 
 std::string Filesystem::getSourceBaseDirectory() const
 {
-	size_t source_len = game_source.length();
+	size_t source_len = gameSource.length();
 
 	if (source_len == 0)
 		return "";
 
-	// FIXME: This doesn't take into account parent and current directory
-	// symbols (i.e. '..' and '.')
 #ifdef LOVE_WINDOWS
 	// In windows, delimiters can be either '/' or '\'.
-	size_t base_end_pos = game_source.find_last_of("/\\", source_len - 2);
+	size_t base_end_pos = gameSource.find_last_of("/\\", source_len - 2);
 #else
-	size_t base_end_pos = game_source.find_last_of('/', source_len - 2);
+	size_t base_end_pos = gameSource.find_last_of('/', source_len - 2);
 #endif
 
 	if (base_end_pos == std::string::npos)
@@ -576,7 +802,7 @@ std::string Filesystem::getSourceBaseDirectory() const
 	if (base_end_pos == 0)
 		base_end_pos = 1;
 
-	return game_source.substr(0, base_end_pos);
+	return gameSource.substr(0, base_end_pos);
 }
 
 std::string Filesystem::getRealDirectory(const char *filename) const
@@ -592,6 +818,14 @@ std::string Filesystem::getRealDirectory(const char *filename) const
 	return std::string(dir);
 }
 
+bool Filesystem::exists(const char *filepath) const
+{
+	if (!PHYSFS_isInit())
+		return false;
+
+	return PHYSFS_exists(filepath) != 0;
+}
+
 bool Filesystem::getInfo(const char *filepath, Info &info) const
 {
 	if (!PHYSFS_isInit())
@@ -603,6 +837,7 @@ bool Filesystem::getInfo(const char *filepath, Info &info) const
 
 	info.size = (int64) stat.filesize;
 	info.modtime = (int64) stat.modtime;
+	info.readonly = stat.readonly != 0;
 
 	if (stat.filetype == PHYSFS_FILETYPE_REGULAR)
 		info.type = FILETYPE_FILE;
@@ -621,12 +856,22 @@ bool Filesystem::createDirectory(const char *dir)
 	if (!PHYSFS_isInit())
 		return false;
 
-	if (PHYSFS_getWriteDir() == 0 && !setupWriteDirectory())
+	if (!setupWriteDirectory())
 		return false;
 
 	if (!PHYSFS_mkdir(dir))
 		return false;
 
+#ifdef LOVE_ANDROID
+	// In Android with t.externalstorage = true, make sure the directory
+    // created in the save directory has permissions of ugo+rwx (0777) so that
+    // it's accessible through MTP.
+	if (isAndroidSaveExternal())
+		love::android::fixupExternalStoragePermission(
+			getFullCommonPath(CommonPath::COMMONPATH_APP_SAVEDIR),
+			dir
+		);
+#endif
 	return true;
 }
 
@@ -635,7 +880,7 @@ bool Filesystem::remove(const char *file)
 	if (!PHYSFS_isInit())
 		return false;
 
-	if (PHYSFS_getWriteDir() == 0 && !setupWriteDirectory())
+	if (!setupWriteDirectory())
 		return false;
 
 	if (!PHYSFS_delete(file))
@@ -646,19 +891,23 @@ bool Filesystem::remove(const char *file)
 
 FileData *Filesystem::read(const char *filename, int64 size) const
 {
-	File file(filename);
-
-	file.open(File::MODE_READ);
+	File file(filename, File::MODE_READ);
 
 	// close() is called in the File destructor.
 	return file.read(size);
 }
 
+FileData* Filesystem::read(const char* filename) const
+{
+	File file(filename, File::MODE_READ);
+
+	// close() is called in the File destructor.
+	return file.read();
+}
+
 void Filesystem::write(const char *filename, const void *data, int64 size) const
 {
-	File file(filename);
-
-	file.open(File::MODE_WRITE);
+	File file(filename, File::MODE_WRITE);
 
 	// close() is called in the File destructor.
 	if (!file.write(data, size))
@@ -667,29 +916,28 @@ void Filesystem::write(const char *filename, const void *data, int64 size) const
 
 void Filesystem::append(const char *filename, const void *data, int64 size) const
 {
-	File file(filename);
-
-	file.open(File::MODE_APPEND);
+	File file(filename, File::MODE_APPEND);
 
 	// close() is called in the File destructor.
 	if (!file.write(data, size))
 		throw love::Exception("Data could not be written.");
 }
 
-void Filesystem::getDirectoryItems(const char *dir, std::vector<std::string> &items)
+bool Filesystem::getDirectoryItems(const char *dir, std::vector<std::string> &items)
 {
 	if (!PHYSFS_isInit())
-		return;
+		return false;
 
 	char **rc = PHYSFS_enumerateFiles(dir);
 
 	if (rc == nullptr)
-		return;
+		return false;
 
 	for (char **i = rc; *i != 0; i++)
 		items.push_back(*i);
 
 	PHYSFS_freeList(rc);
+	return true;
 }
 
 void Filesystem::setSymlinksEnabled(bool enable)

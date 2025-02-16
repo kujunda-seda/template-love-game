@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -23,9 +23,11 @@
 
 // LOVE
 #include "window/Window.h"
+#include "common/config.h"
+#include "graphics/Graphics.h"
 
 // SDL
-#include <SDL.h>
+#include <SDL3/SDL.h>
 
 namespace love
 {
@@ -85,6 +87,7 @@ public:
 	void minimize() override;
 	void maximize() override;
 	void restore() override;
+	void focus() override;
 
 	bool isMaximized() const override;
 	bool isMinimized() const override;
@@ -95,6 +98,7 @@ public:
 	bool hasMouseFocus() const override;
 
 	bool isVisible() const override;
+	bool isOccluded() const override;
 
 	void setMouseGrab(bool grab) override;
 	bool isMouseGrabbed() const override;
@@ -103,6 +107,8 @@ public:
 	int getHeight() const override;
 	int getPixelWidth() const override;
 	int getPixelHeight() const override;
+
+	void clampPositionInWindow(double *wx, double *wy) const override;
 
 	void windowToPixelCoords(double *x, double *y) const override;
 	void pixelToWindowCoords(double *x, double *y) const override;
@@ -118,18 +124,18 @@ public:
 	double fromPixels(double x) const override;
 	void fromPixels(double px, double py, double &wx, double &wy) const override;
 
-	const void *getHandle() const override;
+	void *getHandle() const override;
 
 	bool showMessageBox(const std::string &title, const std::string &message, MessageBoxType type, bool attachtowindow) override;
 	int showMessageBox(const MessageBoxData &data) override;
 
+	void showFileDialog(const FileDialogData &data, FileDialogCallback callback, void *context) override;
+
 	void requestAttention(bool continuous) override;
 
-	const char *getName() const override;
+	void handleSDLEvent(const SDL_Event &event);
 
 private:
-
-	void close(bool allowExceptions);
 
 	struct ContextAttribs
 	{
@@ -139,11 +145,13 @@ private:
 		bool debug;
 	};
 
-	void setGLFramebufferAttributes(int msaa, bool sRGB, bool stencil, int depth);
+	void close(bool allowExceptions);
+
+	void setGLFramebufferAttributes(bool sRGB);
 	void setGLContextAttributes(const ContextAttribs &attribs);
 	bool checkGLVersion(const ContextAttribs &attribs, std::string &outversion);
 	std::vector<ContextAttribs> getContextAttribsList() const;
-	bool createWindowAndContext(int x, int y, int w, int h, Uint32 windowflags, int msaa, bool stencil, int depth);
+	bool createWindowAndContext(int x, int y, int w, int h, Uint32 windowflags, graphics::Renderer renderer);
 
 	// Update the saved window settings based on the window's actual state.
 	void updateSettings(const WindowSettings &newsettings, bool updateGraphicsViewport);
@@ -159,18 +167,29 @@ private:
 	WindowSettings settings;
 	StrongRef<love::image::ImageData> icon;
 
+#ifdef LOVE_WINDOWS
+	bool canUseDwmFlush = false;
+#endif
+
 	bool open;
 
 	bool mouseGrabbed;
 
 	SDL_Window *window;
-	SDL_GLContext context;
+
+	SDL_GLContext glcontext;
+#ifdef LOVE_GRAPHICS_METAL
+	SDL_MetalView metalView;
+#endif
+
+	graphics::Renderer windowRenderer = graphics::RENDERER_NONE;
 
 	bool displayedWindowError;
-	bool hasSDL203orEarlier;
 	ContextAttribs contextAttribs;
 
 	StrongRef<graphics::Graphics> graphics;
+
+	Uint32 dialogEventId;
 
 }; // Window
 

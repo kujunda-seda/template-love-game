@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -38,6 +38,7 @@ public:
 
 	enum ModuleType
 	{
+		M_UNKNOWN = -1, // Use this for modules outside of LOVE's source code.
 		M_AUDIO,
 		M_DATA,
 		M_EVENT,
@@ -50,6 +51,7 @@ public:
 		M_MATH,
 		M_MOUSE,
 		M_PHYSICS,
+		M_SENSOR,
 		M_SOUND,
 		M_SYSTEM,
 		M_THREAD,
@@ -60,13 +62,13 @@ public:
 		M_MAX_ENUM
 	};
 
-	Module();
+	Module(ModuleType moduleType, const char *name);
 	virtual ~Module();
 
     /**
      * Gets the base type of the module.
      **/
-	virtual ModuleType getModuleType() const = 0;
+	ModuleType getModuleType() const { return moduleType; }
 
 	/**
 	 * Gets the name of the module. This is used in case of errors
@@ -74,14 +76,7 @@ public:
 	 *
 	 * @return The full name of the module, eg. love.graphics.opengl.
 	 **/
-	virtual const char *getName() const = 0;
-
-	/**
-	 * Add module to internal registry. To be used /only/ in
-	 * runtime.cpp:luax_register_module()
-	 * @param instance The module instance.
-	 */
-	static void registerInstance(Module *instance);
+	const char *getName() const { return name.c_str(); }
 
 	/**
 	 * Retrieve module instance from internal registry. May return NULL
@@ -99,10 +94,15 @@ public:
 	template <typename T>
 	static T *getInstance(ModuleType type)
 	{
-		return (T *) instances[type];
+		return type != M_UNKNOWN ? (T *) instances[type] : nullptr;
 	}
 
 private:
+
+	static void registerInstance(Module *instance);
+
+	ModuleType moduleType;
+	std::string name;
 
 	static Module *instances[M_MAX_ENUM];
 

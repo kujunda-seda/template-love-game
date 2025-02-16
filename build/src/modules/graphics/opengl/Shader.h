@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -43,11 +43,16 @@ class Shader final : public love::graphics::Shader, public Volatile
 {
 public:
 
-	/**
-	 * Creates a new Shader using a list of source codes.
-	 * Source must contain either vertex or pixel shader code, or both.
-	 **/
-	Shader(love::graphics::ShaderStage *vertex, love::graphics::ShaderStage *pixel);
+	struct StorageTextureBinding
+	{
+		love::graphics::Texture *texture = nullptr;
+		GLuint gltexture = 0;
+		TextureType type = TEXTURE_2D;
+		GLenum access = GL_READ_ONLY;
+		GLenum internalFormat;
+	};
+
+	Shader(StrongRef<love::graphics::ShaderStage> stages[SHADERSTAGE_MAX_ENUM], const CompileOptions &options);
 	virtual ~Shader();
 
 	// Implements Volatile
@@ -58,20 +63,14 @@ public:
 	void attach() override;
 	std::string getWarnings() const override;
 	int getVertexAttributeIndex(const std::string &name) override;
-	const UniformInfo *getUniformInfo(const std::string &name) const override;
 	const UniformInfo *getUniformInfo(BuiltinUniform builtin) const override;
 	void updateUniform(const UniformInfo *info, int count) override;
-	void sendTextures(const UniformInfo *info, Texture **textures, int count) override;
-	bool hasUniform(const std::string &name) const override;
 	ptrdiff_t getHandle() const override;
-	void setVideoTextures(Texture *ytexture, Texture *cbtexture, Texture *crtexture) override;
 
-	void updateScreenParams();
-	void updatePointSize(float size);
-	void updateBuiltinUniforms();
+	void updateBuiltinUniforms(love::graphics::Graphics *gfx, int viewportW, int viewportH);
 
-	static std::string getGLSLVersion();
-	static bool isSupported();
+	const std::vector<Buffer *> &getActiveWritableStorageBuffers() const { return activeWritableStorageBuffers; }
+	const std::vector<StorageTextureBinding> &getStorageTextureBindings() const { return storageTextureBindings; }
 
 private:
 
@@ -79,22 +78,23 @@ private:
 	{
 		GLuint texture = 0;
 		TextureType type = TEXTURE_2D;
+		bool isTexelBuffer = false;
 		bool active = false;
+	};
+
+	struct BufferBinding
+	{
+		int bindingindex = 0;
+		GLuint buffer = 0;
 	};
 
 	// Map active uniform names to their locations.
 	void mapActiveUniforms();
 
 	void updateUniform(const UniformInfo *info, int count, bool internalupdate);
-	void sendTextures(const UniformInfo *info, Texture **textures, int count, bool internalupdate);
 
-	int getUniformTypeComponents(GLenum type) const;
-	MatrixSize getMatrixSize(GLenum type) const;
-	UniformType getUniformBaseType(GLenum type) const;
-	TextureType getUniformTextureType(GLenum type) const;
-	bool isDepthTextureType(GLenum type) const;
-
-	void flushStreamDraws() const;
+	void applyTexture(const UniformInfo *info, int i, love::graphics::Texture *texture, UniformType basetype, bool isdefault) override;
+	void applyBuffer(const UniformInfo *info, int i, love::graphics::Buffer *buffer, UniformType basetype, bool isdefault) override;
 
 	// Get any warnings or errors generated only by the shader program object.
 	std::string getProgramWarnings() const;
@@ -106,26 +106,19 @@ private:
 	GLint builtinUniforms[BUILTIN_MAX_ENUM];
 	UniformInfo *builtinUniformInfo[BUILTIN_MAX_ENUM];
 
-	// Location values for any generic vertex attribute variables.
-	GLint builtinAttributes[ATTRIB_MAX_ENUM];
-
 	std::map<std::string, GLint> attributes;
 
-	// Uniform location buffer map
-	std::map<std::string, UniformInfo> uniforms;
-
-	// Texture unit pool for setting images
+	// Texture unit pool for setting textures
 	std::vector<TextureUnit> textureUnits;
 
+	std::vector<StorageTextureBinding> storageTextureBindings;
+
+	std::vector<std::pair<int, int>> storageBufferBindingIndexToActiveBinding;
+	std::vector<BufferBinding> activeStorageBufferBindings;
+
+	std::vector<Buffer *> activeWritableStorageBuffers;
+
 	std::vector<std::pair<const UniformInfo *, int>> pendingUniformUpdates;
-
-	bool canvasWasActive;
-	Rect lastViewport;
-
-	float lastPointSize;
-
-	Matrix4 lastTransformMatrix;
-	Matrix4 lastProjectionMatrix;
 
 }; // Shader
 

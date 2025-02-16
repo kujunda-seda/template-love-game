@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -26,7 +26,7 @@
 #include "threads.h"
 
 // SDL
-#include <SDL_thread.h>
+#include <SDL3/SDL_thread.h>
 
 namespace love
 {

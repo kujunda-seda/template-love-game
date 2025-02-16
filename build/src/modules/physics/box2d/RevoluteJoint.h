@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -87,9 +87,9 @@ public:
 
 	/**
 	 * Get the current motor torque, usually in N-m.
-	 * @param inv_dt The inverse timestep.
+	 * @param dt The timestep.
 	 **/
-	float getMotorTorque(float inv_dt) const;
+	float getMotorTorque(float dt) const;
 
 	/**
 	 * Get the maximum motor torque, usually in N-m.

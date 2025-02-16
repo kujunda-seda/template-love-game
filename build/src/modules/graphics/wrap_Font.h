@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -30,7 +30,7 @@ namespace graphics
 {
 
 Font *luax_checkfont(lua_State *L, int idx);
-void luax_checkcoloredstring(lua_State *L, int idx, std::vector<Font::ColoredString> &strings);
+void luax_checkcoloredstring(lua_State *L, int idx, std::vector<love::font::ColoredString> &strings);
 extern "C" int luaopen_font(lua_State *L);
 
 } // graphics

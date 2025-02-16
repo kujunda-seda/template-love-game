@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -20,6 +20,7 @@
 
 // LOVE
 #include "TrueTypeRasterizer.h"
+#include "HarfbuzzShaper.h"
 #include "common/Exception.h"
 
 // C
@@ -32,12 +33,13 @@ namespace font
 namespace freetype
 {
 
-TrueTypeRasterizer::TrueTypeRasterizer(FT_Library library, love::Data *data, int size, float dpiscale, Hinting hinting)
+TrueTypeRasterizer::TrueTypeRasterizer(FT_Library library, love::Data *data, int size, const Settings &settings, float defaultdpiscale)
 	: data(data)
-	, hinting(hinting)
+	, hinting(settings.hinting)
 {
-	this->dpiScale = dpiscale;
-	size = floorf(size * dpiscale + 0.5f);
+	dpiScale = settings.dpiScale.get(defaultdpiscale);
+
+	sdf = settings.sdf;
 
 	if (size <= 0)
 		throw love::Exception("Invalid TrueType font size: %d", size);
@@ -52,7 +54,7 @@ TrueTypeRasterizer::TrueTypeRasterizer(FT_Library library, love::Data *data, int
 	if (err != FT_Err_Ok)
 		throw love::Exception("TrueType Font loading error: FT_New_Face failed: 0x%x (problem with font file?)", err);
 
-	err = FT_Set_Pixel_Sizes(face, size, size);
+	err = FT_Set_Char_Size(face, size << 6, size << 6, 72 * dpiScale, 72 * dpiScale);
 
 	if (err != FT_Err_Ok)
 		throw love::Exception("TrueType Font loading error: FT_Set_Pixel_Sizes failed: 0x%x (invalid size?)", err);
@@ -75,7 +77,30 @@ int TrueTypeRasterizer::getLineHeight() const
 	return (int)(getHeight() * 1.25);
 }
 
-GlyphData *TrueTypeRasterizer::getGlyphData(uint32 glyph) const
+int TrueTypeRasterizer::getGlyphSpacing(uint32 glyph) const
+{
+	FT_Glyph ftglyph;
+	FT_Error err = FT_Err_Ok;
+	FT_UInt loadoption = hintingToLoadOption(hinting);
+
+	// Initialize
+	err = FT_Load_Glyph(face, FT_Get_Char_Index(face, glyph), FT_LOAD_DEFAULT | loadoption);
+	if (err != FT_Err_Ok)
+		return 0;
+
+	err = FT_Get_Glyph(face->glyph, &ftglyph);
+	if (err != FT_Err_Ok)
+		return 0;
+
+	return (int)(ftglyph->advance.x >> 16);
+}
+
+int TrueTypeRasterizer::getGlyphIndex(uint32 glyph) const
+{
+	return FT_Get_Char_Index(face, glyph);
+}
+
+GlyphData *TrueTypeRasterizer::getGlyphDataForIndex(int index) const
 {
 	love::font::GlyphMetrics glyphMetrics = {};
 	FT_Glyph ftglyph;
@@ -84,7 +109,7 @@ GlyphData *TrueTypeRasterizer::getGlyphData(uint32 glyph) const
 	FT_UInt loadoption = hintingToLoadOption(hinting);
 
 	// Initialize
-	err = FT_Load_Glyph(face, FT_Get_Char_Index(face, glyph), FT_LOAD_DEFAULT | loadoption);
+	err = FT_Load_Glyph(face, index, FT_LOAD_DEFAULT | loadoption);
 
 	if (err != FT_Err_Ok)
 		throw love::Exception("TrueType Font glyph error: FT_Load_Glyph failed (0x%x)", err);
@@ -95,16 +120,29 @@ GlyphData *TrueTypeRasterizer::getGlyphData(uint32 glyph) const
 		throw love::Exception("TrueType Font glyph error: FT_Get_Glyph failed (0x%x)", err);
 
 	FT_Render_Mode rendermode = FT_RENDER_MODE_NORMAL;
-	if (hinting == HINTING_MONO)
+	if (sdf)
+		rendermode = FT_RENDER_MODE_SDF;
+	else if (hinting == HINTING_MONO)
 		rendermode = FT_RENDER_MODE_MONO;
 
 	err = FT_Glyph_To_Bitmap(&ftglyph, rendermode, 0, 1);
 
 	if (err != FT_Err_Ok)
-		throw love::Exception("TrueType Font glyph error: FT_Glyph_To_Bitmap failed (0x%x)", err);
+	{
+		if (rendermode == FT_RENDER_MODE_SDF)
+		{
+			err = FT_Glyph_To_Bitmap(&ftglyph, FT_RENDER_MODE_NORMAL, 0, 1);
+			if (err != FT_Err_Ok)
+				throw love::Exception("TrueType Font glyph error: FT_Glyph_To_Bitmap failed (0x%x)", err);
+		}
+		else
+		{
+			throw love::Exception("TrueType Font glyph error: FT_Glyph_To_Bitmap failed (0x%x)", err);
+		}
+	}
 
 	FT_BitmapGlyph bitmap_glyph = (FT_BitmapGlyph) ftglyph;
-	FT_Bitmap &bitmap = bitmap_glyph->bitmap; //just to make things easier
+	const FT_Bitmap &bitmap = bitmap_glyph->bitmap; //just to make things easier
 
 	// Get metrics
 	glyphMetrics.bearingX = bitmap_glyph->left;
@@ -113,7 +151,8 @@ GlyphData *TrueTypeRasterizer::getGlyphData(uint32 glyph) const
 	glyphMetrics.width = bitmap.width;
 	glyphMetrics.advance = (int) (ftglyph->advance.x >> 16);
 
-	GlyphData *glyphData = new GlyphData(glyph, glyphMetrics, PIXELFORMAT_LA8);
+	// TODO: https://stackoverflow.com/questions/60526004/how-to-get-glyph-unicode-using-freetype/69730502#69730502
+	GlyphData *glyphData = new GlyphData(0, glyphMetrics, PIXELFORMAT_LA8_UNORM);
 
 	const uint8 *pixels = bitmap.buffer;
 	uint8 *dest = (uint8 *) glyphData->getData();
@@ -184,6 +223,11 @@ float TrueTypeRasterizer::getKerning(uint32 leftglyph, uint32 rightglyph) const
 Rasterizer::DataType TrueTypeRasterizer::getDataType() const
 {
 	return DATA_TRUETYPE;
+}
+
+TextShaper *TrueTypeRasterizer::newTextShaper()
+{
+	return new HarfbuzzShaper(this);
 }
 
 bool TrueTypeRasterizer::accepts(FT_Library library, love::Data *data)

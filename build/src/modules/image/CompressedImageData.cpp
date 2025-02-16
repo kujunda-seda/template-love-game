@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -19,6 +19,7 @@
  **/
 
 #include "CompressedImageData.h"
+#include "common/Exception.h"
 
 namespace love
 {
@@ -29,7 +30,6 @@ love::Type CompressedImageData::type("CompressedImageData", &Data::type);
 
 CompressedImageData::CompressedImageData(const std::list<FormatHandler *> &formats, Data *filedata)
 	: format(PIXELFORMAT_UNKNOWN)
-	, sRGB(false)
 {
 	FormatHandler *parser = nullptr;
 
@@ -45,7 +45,7 @@ CompressedImageData::CompressedImageData(const std::list<FormatHandler *> &forma
 	if (parser == nullptr)
 		throw love::Exception("Could not parse compressed data: Unknown format.");
 
-	memory = parser->parseCompressed(filedata, dataImages, format, sRGB);
+	memory = parser->parseCompressed(filedata, dataImages, format);
 
 	if (memory == nullptr)
 		throw love::Exception("Could not parse compressed data.");
@@ -53,16 +53,18 @@ CompressedImageData::CompressedImageData(const std::list<FormatHandler *> &forma
 	if (format == PIXELFORMAT_UNKNOWN)
 		throw love::Exception("Could not parse compressed data: Unknown format.");
 
-	if (dataImages.size() == 0 || memory->size == 0)
+	if (dataImages.size() == 0 || memory->getSize() == 0)
 		throw love::Exception("Could not parse compressed data: No valid data?");
+
+	// This throws away some information the decoder could give us, but we
+	// can't really rely on it I think...
+	format = getLinearPixelFormat(format);
 }
 
 CompressedImageData::CompressedImageData(const CompressedImageData &c)
 	: format(c.format)
-	, sRGB(c.sRGB)
 {
-	memory.set(new CompressedMemory(c.memory->size), Acquire::NORETAIN);
-	memcpy(memory->data, c.memory->data, memory->size);
+	memory.set(c.memory->clone(), Acquire::NORETAIN);
 
 	for (const auto &i : c.dataImages)
 	{
@@ -83,12 +85,12 @@ CompressedImageData::~CompressedImageData()
 
 size_t CompressedImageData::getSize() const
 {
-	return memory->size;
+	return memory->getSize();
 }
 
 void *CompressedImageData::getData() const
 {
-	return memory->data;
+	return memory->getData();
 }
 
 int CompressedImageData::getMipmapCount() const
@@ -134,9 +136,15 @@ PixelFormat CompressedImageData::getFormat() const
 	return format;
 }
 
-bool CompressedImageData::isSRGB() const
+void CompressedImageData::setLinear(bool linear)
 {
-	return sRGB;
+	for (auto &slice : dataImages)
+		slice->setLinear(linear);
+}
+
+bool CompressedImageData::isLinear() const
+{
+	return dataImages.empty() ? false : dataImages[0]->isLinear();
 }
 
 CompressedSlice *CompressedImageData::getSlice(int slice, int miplevel) const

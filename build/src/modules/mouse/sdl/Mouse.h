@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -39,13 +39,10 @@ class Mouse : public love::mouse::Mouse
 {
 public:
 
-	// Implements Module.
-	const char *getName() const override;
-
 	Mouse();
 	virtual ~Mouse();
 
-	love::mouse::Cursor *newCursor(love::image::ImageData *data, int hotx, int hoty) override;
+	love::mouse::Cursor *newCursor(const std::vector<image::ImageData *> &data, int hotx, int hoty) override;
 	love::mouse::Cursor *getSystemCursor(Cursor::SystemCursor cursortype) override;
 
 	void setCursor(love::mouse::Cursor *cursor) override;
@@ -55,12 +52,9 @@ public:
 
 	bool isCursorSupported() const override;
 
-	double getX() const override;
-	double getY() const override;
 	void getPosition(double &x, double &y) const override;
-	void setX(double x) override;
-	void setY(double y) override;
 	void setPosition(double x, double y) override;
+	void getGlobalPosition(double &x, double &y, int &displayindex) const override;
 	void setVisible(bool visible) override;
 	bool isDown(const std::vector<int> &buttons) const override;
 	bool isVisible() const override;

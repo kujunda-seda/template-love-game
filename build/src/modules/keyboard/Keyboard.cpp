@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -19,6 +19,7 @@
  **/
 
 #include "common/config.h"
+#include "libraries/utf8/utf8.h"
 
 #include "Keyboard.h"
 
@@ -27,14 +28,77 @@ namespace love
 namespace keyboard
 {
 
+Keyboard::Keyboard(const char *name)
+	: Module(M_KEYBOARD, name)
+{
+}
+
 bool Keyboard::getConstant(const char *in, Key &out)
 {
-	return keys.find(in, out);
+	auto it = stringToKey.find(in);
+	if (it != stringToKey.end())
+	{
+		out = (Key)it->second;
+		return true;
+	}
+
+	std::string text(in);
+	uint32 codepoint = 0;
+
+	try
+	{
+		codepoint = utf8::peek_next(text.begin(), text.end());
+	}
+	catch (utf8::exception &)
+	{
+		return false;
+	}
+
+	if (codepoint > 0)
+	{
+		stringToKey[text] = codepoint;
+		out = (Key)codepoint;
+	}
+
+	return false;
 }
 
 bool Keyboard::getConstant(Key in, const char *&out)
 {
-	return keys.find(in, out);
+	if (keyToString.empty())
+	{
+		for (const auto &kvp : stringToKey)
+			keyToString[kvp.second] = kvp.first;
+	}
+
+	auto it = keyToString.find(in);
+	if (it != keyToString.end())
+	{
+		out = it->second.c_str();
+		return true;
+	}
+
+	char u[5] = { 0, 0, 0, 0, 0 };
+	ptrdiff_t length = 0;
+
+	try
+	{
+		char *end = utf8::unchecked::append(in, u);
+		length = end - u;
+	}
+	catch (utf8::exception &)
+	{
+		return false;
+	}
+
+	if (length > 0)
+	{
+		keyToString[in] = std::string(u, length);
+		out = keyToString[in].c_str();
+		return true;
+	}
+
+	return false;
 }
 
 bool Keyboard::getConstant(const char *in, Scancode &out)
@@ -47,7 +111,17 @@ bool Keyboard::getConstant(Scancode in, const char *&out)
 	return scancodes.find(in, out);
 }
 
-StringMap<Keyboard::Key, Keyboard::KEY_MAX_ENUM>::Entry Keyboard::keyEntries[] =
+bool Keyboard::getConstant(const char *in, ModifierKey &out)
+{
+	return modifiers.find(in, out);
+}
+
+bool Keyboard::getConstant(ModifierKey in, const char *&out)
+{
+	return modifiers.find(in, out);
+}
+
+std::map<std::string, uint32> Keyboard::stringToKey =
 {
 	{"unknown", Keyboard::KEY_UNKNOWN},
 
@@ -211,7 +285,7 @@ StringMap<Keyboard::Key, Keyboard::KEY_MAX_ENUM>::Entry Keyboard::keyEntries[] =
 	{"oper", Keyboard::KEY_OPER},
 	{"clearagain", Keyboard::KEY_CLEARAGAIN},
 
-	{"thsousandsseparator", Keyboard::KEY_THOUSANDSSEPARATOR},
+	{"thousandsseparator", Keyboard::KEY_THOUSANDSSEPARATOR},
 	{"decimalseparator", Keyboard::KEY_DECIMALSEPARATOR},
 	{"currencyunit", Keyboard::KEY_CURRENCYUNIT},
 	{"currencysubunit", Keyboard::KEY_CURRENCYSUBUNIT},
@@ -233,10 +307,6 @@ StringMap<Keyboard::Key, Keyboard::KEY_MAX_ENUM>::Entry Keyboard::keyEntries[] =
 	{"audioplay", Keyboard::KEY_AUDIOPLAY},
 	{"audiomute", Keyboard::KEY_AUDIOMUTE},
 	{"mediaselect", Keyboard::KEY_MEDIASELECT},
-	{"www", Keyboard::KEY_WWW},
-	{"mail", Keyboard::KEY_MAIL},
-	{"calculator", Keyboard::KEY_CALCULATOR},
-	{"computer", Keyboard::KEY_COMPUTER},
 	{"appsearch", Keyboard::KEY_APP_SEARCH},
 	{"apphome", Keyboard::KEY_APP_HOME},
 	{"appback", Keyboard::KEY_APP_BACK},
@@ -245,17 +315,11 @@ StringMap<Keyboard::Key, Keyboard::KEY_MAX_ENUM>::Entry Keyboard::keyEntries[] =
 	{"apprefresh", Keyboard::KEY_APP_REFRESH},
 	{"appbookmarks", Keyboard::KEY_APP_BOOKMARKS},
 
-	{"brightnessdown", Keyboard::KEY_BRIGHTNESSDOWN},
-	{"brightnessup", Keyboard::KEY_BRIGHTNESSUP},
-	{"displayswitch", Keyboard::KEY_DISPLAYSWITCH},
-	{"kbdillumtoggle", Keyboard::KEY_KBDILLUMTOGGLE},
-	{"kbdillumdown", Keyboard::KEY_KBDILLUMDOWN},
-	{"kbdillumup", Keyboard::KEY_KBDILLUMUP},
 	{"eject", Keyboard::KEY_EJECT},
 	{"sleep", Keyboard::KEY_SLEEP},
 };
 
-StringMap<Keyboard::Key, Keyboard::KEY_MAX_ENUM> Keyboard::keys(Keyboard::keyEntries, sizeof(Keyboard::keyEntries));
+std::map<uint32, std::string> Keyboard::keyToString;
 
 StringMap<Keyboard::Scancode, Keyboard::SCANCODE_MAX_ENUM>::Entry Keyboard::scancodeEntries[] =
 {
@@ -432,7 +496,7 @@ StringMap<Keyboard::Scancode, Keyboard::SCANCODE_MAX_ENUM>::Entry Keyboard::scan
 
 	{"kp00", SCANCODE_KP_00},
 	{"kp000", SCANCODE_KP_000},
-	{"thsousandsseparator", SCANCODE_THOUSANDSSEPARATOR},
+	{"thousandsseparator", SCANCODE_THOUSANDSSEPARATOR},
 	{"decimalseparator", SCANCODE_DECIMALSEPARATOR},
 	{"currencyunit", SCANCODE_CURRENCYUNIT},
 	{"currencysubunit", SCANCODE_CURRENCYSUBUNIT},
@@ -494,10 +558,6 @@ StringMap<Keyboard::Scancode, Keyboard::SCANCODE_MAX_ENUM>::Entry Keyboard::scan
 	{"audioplay", SCANCODE_AUDIOPLAY},
 	{"audiomute", SCANCODE_AUDIOMUTE},
 	{"mediaselect", SCANCODE_MEDIASELECT},
-	{"www", SCANCODE_WWW},
-	{"mail", SCANCODE_MAIL},
-	{"calculator", SCANCODE_CALCULATOR},
-	{"computer", SCANCODE_COMPUTER},
 	{"acsearch", SCANCODE_AC_SEARCH},
 	{"achome", SCANCODE_AC_HOME},
 	{"acback", SCANCODE_AC_BACK},
@@ -506,20 +566,21 @@ StringMap<Keyboard::Scancode, Keyboard::SCANCODE_MAX_ENUM>::Entry Keyboard::scan
 	{"acrefresh", SCANCODE_AC_REFRESH},
 	{"acbookmarks", SCANCODE_AC_BOOKMARKS},
 
-	{"brightnessdown", SCANCODE_BRIGHTNESSDOWN},
-	{"brightnessup", SCANCODE_BRIGHTNESSUP},
-	{"displayswitch", SCANCODE_DISPLAYSWITCH},
-	{"kbdillumtoggle", SCANCODE_KBDILLUMTOGGLE},
-	{"kbdillumdown", SCANCODE_KBDILLUMDOWN},
-	{"kbdillumup", SCANCODE_KBDILLUMUP},
 	{"eject", SCANCODE_EJECT},
 	{"sleep", SCANCODE_SLEEP},
-
-	{"app1", SCANCODE_APP1},
-	{"app2", SCANCODE_APP2},
 };
 
 StringMap<Keyboard::Scancode, Keyboard::SCANCODE_MAX_ENUM> Keyboard::scancodes(Keyboard::scancodeEntries, sizeof(Keyboard::scancodeEntries));
+
+StringMap<Keyboard::ModifierKey, Keyboard::MODKEY_MAX_ENUM>::Entry Keyboard::modifierEntries[] =
+{
+	{"numlock", MODKEY_NUMLOCK},
+	{"capslock", MODKEY_CAPSLOCK},
+	{"scrolllock", MODKEY_SCROLLLOCK},
+	{"mode", MODKEY_MODE},
+};
+
+StringMap<Keyboard::ModifierKey, Keyboard::MODKEY_MAX_ENUM> Keyboard::modifiers(Keyboard::modifierEntries, sizeof(Keyboard::modifierEntries));
 
 } // keyboard
 } // love

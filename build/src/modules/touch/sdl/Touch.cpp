@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -26,12 +26,26 @@
 // C++
 #include <algorithm>
 
+#include <SDL3/SDL_hints.h>
+
 namespace love
 {
 namespace touch
 {
+
+// See src/modules/touch/Touch.cpp.
+void setTrackpadTouchImplementation(bool enable)
+{
+	SDL_SetHint(SDL_HINT_TRACKPAD_IS_TOUCH_ONLY, enable ? "1" : "0");
+}
+
 namespace sdl
 {
+
+Touch::Touch()
+	: love::touch::Touch("love.touch.sdl")
+{
+}
 
 const std::vector<Touch::TouchInfo> &Touch::getTouches() const
 {
@@ -49,11 +63,6 @@ const Touch::TouchInfo &Touch::getTouch(int64 id) const
 	throw love::Exception("Invalid active touch ID: %d", id);
 }
 
-const char *Touch::getName() const
-{
-	return "love.touch.sdl";
-}
-
 void Touch::onEvent(Uint32 eventtype, const TouchInfo &info)
 {
 	auto compare = [&](const TouchInfo &touch) -> bool
@@ -63,11 +72,11 @@ void Touch::onEvent(Uint32 eventtype, const TouchInfo &info)
 
 	switch (eventtype)
 	{
-	case SDL_FINGERDOWN:
+	case SDL_EVENT_FINGER_DOWN:
 		touches.erase(std::remove_if(touches.begin(), touches.end(), compare), touches.end());
 		touches.push_back(info);
 		break;
-	case SDL_FINGERMOTION:
+	case SDL_EVENT_FINGER_MOTION:
 	{
 		for (TouchInfo &touch : touches)
 		{
@@ -76,11 +85,23 @@ void Touch::onEvent(Uint32 eventtype, const TouchInfo &info)
 		}
 		break;
 	}
-	case SDL_FINGERUP:
+	case SDL_EVENT_FINGER_UP:
+	case SDL_EVENT_FINGER_CANCELED:
 		touches.erase(std::remove_if(touches.begin(), touches.end(), compare), touches.end());
 		break;
 	default:
 		break;
+	}
+}
+
+Touch::DeviceType Touch::getDeviceType(SDL_TouchDeviceType sdltype)
+{
+	switch (sdltype)
+	{
+		case SDL_TOUCH_DEVICE_DIRECT: return DEVICE_TOUCHSCREEN;
+		case SDL_TOUCH_DEVICE_INDIRECT_ABSOLUTE: return DEVICE_TOUCHPAD;
+		case SDL_TOUCH_DEVICE_INDIRECT_RELATIVE: return DEVICE_TOUCHPAD_RELATIVE;
+		default: return DEVICE_TOUCHSCREEN;
 	}
 }
 

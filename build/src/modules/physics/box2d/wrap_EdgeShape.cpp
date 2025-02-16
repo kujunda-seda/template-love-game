@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -35,62 +35,48 @@ EdgeShape *luax_checkedgeshape(lua_State *L, int idx)
 int w_EdgeShape_setNextVertex(lua_State *L)
 {
 	EdgeShape *t = luax_checkedgeshape(L, 1);
-	if (lua_isnoneornil(L, 2))
-		t->setNextVertex();
-	else
-	{
-		float x = (float)luaL_checknumber(L, 2);
-		float y = (float)luaL_checknumber(L, 3);
-		t->setNextVertex(x, y);
-	}
+	float x = (float)luaL_checknumber(L, 2);
+	float y = (float)luaL_checknumber(L, 3);
+	luax_catchexcept(L, [&]() { t->setNextVertex(x, y); });
 	return 0;
 }
 
 int w_EdgeShape_setPreviousVertex(lua_State *L)
 {
 	EdgeShape *t = luax_checkedgeshape(L, 1);
-	if (lua_isnoneornil(L, 2))
-		t->setPreviousVertex();
-	else
-	{
-		float x = (float)luaL_checknumber(L, 2);
-		float y = (float)luaL_checknumber(L, 3);
-		t->setPreviousVertex(x, y);
-	}
+	float x = (float)luaL_checknumber(L, 2);
+	float y = (float)luaL_checknumber(L, 3);
+	luax_catchexcept(L, [&]() { t->setPreviousVertex(x, y); });
 	return 0;
 }
 
 int w_EdgeShape_getNextVertex(lua_State *L)
 {
 	EdgeShape *t = luax_checkedgeshape(L, 1);
-	float x, y;
-	if (t->getNextVertex(x, y))
-	{
-		lua_pushnumber(L, x);
-		lua_pushnumber(L, y);
-		return 2;
-	}
-	return 0;
+	b2Vec2 v;
+	luax_catchexcept(L, [&]() { v = t->getNextVertex(); });
+	lua_pushnumber(L, v.x);
+	lua_pushnumber(L, v.y);
+	return 2;
 }
 
 int w_EdgeShape_getPreviousVertex(lua_State *L)
 {
 	EdgeShape *t = luax_checkedgeshape(L, 1);
-	float x, y;
-	if (t->getPreviousVertex(x, y))
-	{
-		lua_pushnumber(L, x);
-		lua_pushnumber(L, y);
-		return 2;
-	}
-	return 0;
+	b2Vec2 v;
+	luax_catchexcept(L, [&]() { v = t->getPreviousVertex(); });
+	lua_pushnumber(L, v.x);
+	lua_pushnumber(L, v.y);
+	return 2;
 }
 
 int w_EdgeShape_getPoints(lua_State *L)
 {
 	EdgeShape *t = luax_checkedgeshape(L, 1);
 	lua_remove(L, 1);
-	return t->getPoints(L);
+	int ret = 0;
+	luax_catchexcept(L, [&]() { ret = t->getPoints(L); });
+	return ret;
 }
 
 static const luaL_Reg w_EdgeShape_functions[] =

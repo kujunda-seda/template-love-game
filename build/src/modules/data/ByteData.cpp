@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -31,18 +31,20 @@ namespace data
 
 love::Type ByteData::type("ByteData", &Data::type);
 
-ByteData::ByteData(size_t size)
+ByteData::ByteData(size_t size, bool clear)
 	: size(size)
 {
 	create();
-	memset(data, 0, size);
+	if (clear)
+		memset(data, 0, size);
 }
 
 ByteData::ByteData(const void *d, size_t size)
 	: size(size)
 {
 	create();
-	memcpy(data, d, size);
+	if (d != nullptr)
+		memcpy(data, d, size);
 }
 
 ByteData::ByteData(void *d, size_t size, bool own)
@@ -53,7 +55,8 @@ ByteData::ByteData(void *d, size_t size, bool own)
 	else
 	{
 		create();
-		memcpy(data, d, size);
+		if (d != nullptr)
+			memcpy(data, d, size);
 	}
 }
 

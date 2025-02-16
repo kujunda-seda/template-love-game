@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -38,48 +38,20 @@ Message::~Message()
 {
 }
 
-int Message::toLua(lua_State *L)
+Event::Event(const char *name)
+	: Module(M_EVENT, name)
+	, modalDrawData()
+	, defaultModalDrawData()
 {
-	luax_pushstring(L, name);
-
-	for (const Variant &v : args)
-		v.toLua(L);
-
-	return (int) args.size() + 1;
-}
-
-Message *Message::fromLua(lua_State *L, int n)
-{
-	std::string name = luax_checkstring(L, n);
-	std::vector<Variant> vargs;
-
-	int count = lua_gettop(L) - n;
-	n++;
-
-	Variant varg;
-
-	for (int i = 0; i < count; i++)
-	{
-		if (lua_isnoneornil(L, n+i))
-			break;
-
-		luax_catchexcept(L, [&]() {
-			vargs.push_back(Variant::fromLua(L, n+i));
-		});
-
-		if (vargs.back().getType() == Variant::UNKNOWN)
-		{
-			vargs.clear();
-			luaL_error(L, "Argument %d can't be stored safely\nExpected boolean, number, string or userdata.", n+i);
-			return nullptr;
-		}
-	}
-
-	return new Message(name, vargs);
 }
 
 Event::~Event()
 {
+	if (modalDrawData.cleanup != nullptr)
+		modalDrawData.cleanup(modalDrawData.context);
+
+	if (defaultModalDrawData.cleanup != nullptr)
+		defaultModalDrawData.cleanup(defaultModalDrawData.context);
 }
 
 void Event::push(Message *msg)
@@ -108,6 +80,30 @@ void Event::clear()
 		queue.front()->release();
 		queue.pop();
 	}
+}
+
+void Event::setModalDrawData(const ModalDrawData &data)
+{
+	if (modalDrawData.cleanup != nullptr)
+		modalDrawData.cleanup(modalDrawData.context);
+
+	modalDrawData = data;
+}
+
+void Event::setDefaultModalDrawData(const ModalDrawData &data)
+{
+	if (defaultModalDrawData.cleanup != nullptr)
+		defaultModalDrawData.cleanup(defaultModalDrawData.context);
+
+	defaultModalDrawData = data;
+}
+
+void Event::modalDraw()
+{
+	if (modalDrawData.draw != nullptr)
+		modalDrawData.draw(modalDrawData.context);
+	else if (defaultModalDrawData.draw != nullptr)
+		defaultModalDrawData.draw(defaultModalDrawData.context);
 }
 
 } // event

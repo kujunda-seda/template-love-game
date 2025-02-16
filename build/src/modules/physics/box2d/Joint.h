@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -26,7 +26,7 @@
 #include "physics/Joint.h"
 
 // Box2D
-#include <Box2D/Box2D.h>
+#include <box2d/Box2D.h>
 
 namespace love
 {
@@ -38,16 +38,6 @@ namespace box2d
 // Forward declarations.
 class Body;
 class World;
-
-/**
- * This struct is stored in a void pointer in the Box2D Joint class. For now, all
- * we need is a Lua reference to arbitrary data, but we might need more later.
- **/
-struct jointudata
-{
-    // Reference to arbitrary data.
-    Reference *ref = nullptr;
-};
 
 /**
  * A Joint acts as positioning constraints on Bodies.
@@ -103,7 +93,7 @@ public:
 	 **/
 	float getReactionTorque(float dt);
 
-	bool isActive() const;
+	bool isEnabled() const;
 
 	bool getCollideConnected() const;
 
@@ -140,7 +130,8 @@ protected:
 
 	World *world;
 
-    jointudata *udata;
+	// Reference to arbitrary data.
+	Reference* ref = nullptr;
 
 private:
 

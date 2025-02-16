@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -74,15 +74,15 @@ void Deprecations::draw(Graphics *gfx)
 
 	if (font.get() == nullptr)
 	{
-		auto hinting = font::TrueTypeRasterizer::HINTING_NORMAL;
+		font::TrueTypeRasterizer::Settings settings;
 
 		if (!isGammaCorrect() && gfx->getScreenDPIScale() <= 1.0)
-			hinting = font::TrueTypeRasterizer::HINTING_LIGHT;
+			settings.hinting = font::TrueTypeRasterizer::HINTING_LIGHT;
 
-		font.set(gfx->newDefaultFont(9, hinting), Acquire::NORETAIN);
+		font.set(gfx->newDefaultFont(9, settings), Acquire::NORETAIN);
 	}
 
-	gfx->flushStreamDraws();
+	gfx->flushBatchedDraws();
 
 	gfx->push(Graphics::STACK_ALL);
 	gfx->reset();
@@ -90,7 +90,7 @@ void Deprecations::draw(Graphics *gfx)
 	int maxcount = 4;
 	int remaining = std::max(0, total - maxcount);
 
-	std::vector<Font::ColoredString> strings;
+	std::vector<font::ColoredString> strings;
 	Colorf white(1, 1, 1, 1);
 
 	// Grab the newest deprecation notices first.

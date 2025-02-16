@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -23,10 +23,11 @@
 
 // LOVE
 #include "common/Module.h"
+#include "common/Vector.h"
+
 #include "World.h"
 #include "Contact.h"
 #include "Body.h"
-#include "Fixture.h"
 #include "Shape.h"
 #include "CircleShape.h"
 #include "PolygonShape.h"
@@ -64,10 +65,6 @@ public:
 	Physics();
 	virtual ~Physics();
 
-	// Implements Module.
-	const char *getName() const;
-	virtual ModuleType getModuleType() const { return M_PHYSICS; }
-
 	/**
 	 * Creates a new World.
 	 * @param gx Gravity along x-axis.
@@ -93,10 +90,19 @@ public:
 	Body *newBody(World *world, Body::Type type);
 
 	/**
-	 * Creates a new CircleShape at (0, 0).
-	 * @param radius The radius of the circle.
+	 * Convenience functions for creating a Body and Shape all in one call. The
+	 * body's world position is the center/average of the given coordinates,
+	 * and the shape is centered at the local origin.
 	 **/
-	CircleShape *newCircleShape(float radius);
+	Body *newCircleBody(World *world, Body::Type type, float x, float y, float radius);
+	Body *newRectangleBody(World *world, Body::Type type, float x, float y, float w, float h, float angle);
+	Body *newPolygonBody(World *world, Body::Type type, const Vector2 *coords, int count);
+	Body *newEdgeBody(World *world, Body::Type type, float x1, float y1, float x2, float y2);
+	Body *newEdgeBody(World *world, Body::Type type, float x1, float y1, float x2, float y2, float prevx, float prevy, float nextx, float nexty);
+	Body *newChainBody(World *world, Body::Type type, bool loop, const Vector2 *coords, int count);
+
+	// Necessary to support the deprecated newFixture API.
+	Shape *newAttachedShape(Body *body, Shape *prototype, float density);
 
 	/**
 	 * Creates a new CircleShape at (x,y) in local coordinates.
@@ -104,25 +110,7 @@ public:
 	 * @param y The offset along the y-axis.
 	 * @param radius The radius of the circle.
 	 **/
-	CircleShape *newCircleShape(float x, float y, float radius);
-
-	/**
-	 * Shorthand for creating rectangular PolygonShapes. The rectangle
-	 * will be created at the local origin.
-	 * @param w The width of the rectangle.
-	 * @param h The height of the rectangle.
-	 **/
-	PolygonShape *newRectangleShape(float w, float h);
-
-	/**
-	 * Shorthand for creating rectangular PolygonShapes. The rectangle
-	 * will be created at (x,y) in local coordinates.
-	 * @param x The offset along the x-axis.
-	 * @param y The offset along the y-axis.
-	 * @param w The width of the rectangle.
-	 * @param h The height of the rectangle.
-	 **/
-	PolygonShape *newRectangleShape(float x, float y, float w, float h);
+	CircleShape *newCircleShape(Body *body, float x, float y, float radius);
 
 	/**
 	 * Shorthand for creating rectangular PolygonShapes. The rectangle
@@ -133,7 +121,7 @@ public:
 	 * @param h The height of the rectangle.
 	 * @param angle The angle of the rectangle. (rad)
 	 **/
-	PolygonShape *newRectangleShape(float x, float y, float w, float h, float angle);
+	PolygonShape *newRectangleShape(Body *body, float x, float y, float w, float h, float angle);
 
 	/**
 	 * Creates a new EdgeShape. The edge will be created from
@@ -143,17 +131,18 @@ public:
 	 * @param x2 The x coordinate of the second point.
 	 * @param y2 The y coordinate of the second point.
 	 **/
-	EdgeShape *newEdgeShape(float x1, float y1, float x2, float y2);
+	EdgeShape *newEdgeShape(Body *body, float x1, float y1, float x2, float y2);
+	EdgeShape *newEdgeShape(Body *body, float x1, float y1, float x2, float y2, float prevx, float prevy, float nextx, float nexty);
 
 	/**
 	 * Creates a new PolygonShape from a variable number of vertices.
 	 **/
-	int newPolygonShape(lua_State *L);
+	PolygonShape *newPolygonShape(Body *body, const Vector2 *coords, int count);
 
 	/**
 	 * Creates a new ChainShape from a variable number of vertices.
 	 **/
-	int newChainShape(lua_State *L);
+	ChainShape *newChainShape(Body *body, bool loop, const Vector2 *coords, int count);
 
 	/**
 	 * Creates a new DistanceJoint connecting body1 with body2.
@@ -274,15 +263,6 @@ public:
 	MotorJoint *newMotorJoint(Body *body1, Body *body2, float correctionFactor, bool collideConnected);
 
 	/**
-	 * Creates a new Fixture attaching shape to body.
-	 * @param body The body to attach the Fixture to.
-	 * @param shape The shape to attach to the Fixture,
-	 * @param density The density of the Fixture.
-	 **/
-
-	Fixture *newFixture(Body *body, Shape *shape, float density);
-
-	/**
 	 * Calculates the distance between two Fixtures.
 	 * @param fixtureA The first Fixture.
 	 * @param fixtureB The sceond Fixture.
@@ -357,12 +337,61 @@ public:
 	 * @param aabb The unscaled input AABB.
 	 * @return The scaled AABB.
 	 **/
-	static b2AABB scaleUp(const b2AABB &aabb);
+	static b2AABB scaleUp(const b2AABB& aabb);
+
+	/**
+	 * Calculates the stiffness and damping, given the linear frequency, and damping ratio.
+	 * @param stiffness The output stiffness
+	 * @param damping The output damping
+	 * @param frequency The joint linear frequency
+	 * @param dampingRatio The joint damping ratio
+	 * @param bodyA The bodyA of the joint
+	 * @param bodyB The bodyB of the joint
+	 **/
+	static void computeLinearStiffness(float& stiffness, float& damping, float frequency, float dampingRatio, b2Body* bodyA, b2Body* bodyB);
+
+	/**
+	 * Calculates linear frequency and damping ratio from stiffness and damping
+	 * @param frequency The output frequency
+	 * @param ratio The output damping ratio
+	 * @param stiffness The joint stiffness
+	 * @param damping The joint damping
+	 * @param bodyA The bodyA of the joint
+	 * @param bodyB The bodyB of the joint
+	 **/
+	static void computeLinearFrequency(float &frequency, float &ratio, float stiffness, float damping, b2Body *bodyA, b2Body *bodyB);
+
+	/**
+	 * Calculates the stiffness and damping, given the angular frequency, and damping ratio.
+	 * @param stiffness The output stiffness
+	 * @param damping The output damping
+	 * @param frequency The joint angular frequency
+	 * @param dampingRatio The joint damping ratio
+	 * @param bodyA The bodyA of the joint
+	 * @param bodyB The bodyB of the joint
+	 **/
+	static void computeAngularStiffness(float &stiffness, float &damping, float frequency, float dampingRatio, b2Body *bodyA, b2Body *bodyB);
+
+	/**
+	 * Calculates angular frequency and damping ratio from stiffness and damping
+	 * @param frequency The output frequency
+	 * @param ratio The output damping ratio
+	 * @param stiffness The joint stiffness
+	 * @param damping The joint damping
+	 * @param bodyA The bodyA of the joint
+	 * @param bodyB The bodyB of the joint
+	 **/
+	static void computeAngularFrequency(float &frequency, float &ratio, float stiffness, float damping, b2Body *bodyA, b2Body *bodyB);
+
+	b2BlockAllocator *getBlockAllocator() { return &blockAllocator; }
 
 private:
 
 	// The length of one meter in pixels.
 	static float meter;
+
+	b2BlockAllocator blockAllocator;
+
 }; // Physics
 
 } // box2d

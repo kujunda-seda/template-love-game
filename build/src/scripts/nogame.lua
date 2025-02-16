@@ -1,5 +1,5 @@
 --[[
-Copyright (c) 2006-2023 LOVE Development Team
+Copyright (c) 2006-2024 LOVE Development Team
 
 This software is provided 'as-is', without any express or implied
 warranty.  In no event will the authors be held liable for any damages
@@ -2932,7 +2932,7 @@ function love.nogame()
 		self.closed_t = math.max(0, self.closed_t - dt)
 
 		if self.next_blink_t == 0 then
-			self.next_blink_t = 5 + math.random(0, 3)
+			self.next_blink_t = 5 + love.math.random(0, 3)
 			self.closed_t = 0.1
 		end
 	end
@@ -2948,9 +2948,8 @@ function love.nogame()
 		self.body = love.physics.newBody(world, x, y, "dynamic")
 		self.body:setLinearDamping(0.8)
 		self.body:setAngularDamping(0.8)
-		self.shape = love.physics.newPolygonShape(-55, -60, 0, 90, 55, -60)
-		self.fixture = love.physics.newFixture(self.body, self.shape, 1)
-		self.fixture:setRestitution(0.5)
+		self.shape = love.physics.newPolygonShape(self.body, -55, -60, 0, 90, 55, -60)
+		self.shape:setRestitution(0.5)
 		self.img_normal = img_duckloon_normal
 		self.img_blink = img_duckloon_blink
 		self.img = self.img_normal
@@ -2963,7 +2962,7 @@ function love.nogame()
 		self.state:save(self.body, g_step)
 
 		if math.floor(g_step % 5) == 0 then
-			self.body:applyForce(math.random(30, 50), 0)
+			self.body:applyForce(love.math.random(30, 50), 0)
 		end
 	end
 
@@ -3041,8 +3040,8 @@ function love.nogame()
 			link.body = love.physics.newBody(world, link.x, link.y, "dynamic")
 			link.body:setLinearDamping(0.5)
 			link.body:setAngularDamping(0.5)
-			link.shape = love.physics.newCircleShape(link.radius)
-			link.fixture = love.physics.newFixture(link.body, link.shape, 0.1 / i)
+			link.shape = love.physics.newCircleShape(link.body, link.radius)
+			link.shape:setDensity(0.1 / i)
 			link.state = State(link.body)
 
 			-- Note: every link must also be attached to the Duckloon. Otherwise the
@@ -3114,7 +3113,7 @@ function love.nogame()
 		self.w = self.h_spacing + self.img:getWidth()
 		self.speed = speed -- px/s
 		self.count = love.graphics.getWidth() / self.w + 2
-		self.initial_img = math.random(1, 4)
+		self.initial_img = love.math.random(1, 4)
 	end
 
 	function CloudTrack:update(dt)
@@ -3152,6 +3151,8 @@ function love.nogame()
 
 	-- Called on resize.
 	function create_world()
+		love.math.setRandomSeed(12345)
+
 		local wx, wy = love.graphics.getDimensions()
 		world = love.physics.newWorld(0, 9.81*64)
 		duckloon = Duckloon(world, wx / 2, wy / 2 - 100)
@@ -3166,6 +3167,9 @@ function love.nogame()
 	end
 
 	function love.load()
+		local renderername = love.graphics.getRendererInfo()
+		love.window.setTitle(love.window.getTitle() .. " - " .. renderername)
+
 		love.graphics.setBackgroundColor(43/255, 165/255, 223/255)
 		love.physics.setMeter(64)
 
@@ -3186,21 +3190,21 @@ function love.nogame()
 		R.bg.cloud_3 = R.bg[dpiscale].cloud_3_png
 		R.bg.cloud_4 = R.bg[dpiscale].cloud_4_png
 
-		img_duckloon_normal = love.graphics.newImage(R.duckloon.normal, settings)
-		img_duckloon_blink = love.graphics.newImage(R.duckloon.blink, settings)
+		img_duckloon_normal = love.graphics.newTexture(R.duckloon.normal, settings)
+		img_duckloon_blink = love.graphics.newTexture(R.duckloon.blink, settings)
 
-		img_n = love.graphics.newImage(R.chain.n, settings)
-		img_o = love.graphics.newImage(R.chain.o, settings)
-		img_g = love.graphics.newImage(R.chain.g, settings)
-		img_a = love.graphics.newImage(R.chain.a, settings)
-		img_m = love.graphics.newImage(R.chain.m, settings)
-		img_e = love.graphics.newImage(R.chain.e, settings)
-		img_square = love.graphics.newImage(R.chain.square, settings)
+		img_n = love.graphics.newTexture(R.chain.n, settings)
+		img_o = love.graphics.newTexture(R.chain.o, settings)
+		img_g = love.graphics.newTexture(R.chain.g, settings)
+		img_a = love.graphics.newTexture(R.chain.a, settings)
+		img_m = love.graphics.newTexture(R.chain.m, settings)
+		img_e = love.graphics.newTexture(R.chain.e, settings)
+		img_square = love.graphics.newTexture(R.chain.square, settings)
 
-		img_cloud_1 = love.graphics.newImage(R.bg.cloud_1, settings)
-		img_cloud_2 = love.graphics.newImage(R.bg.cloud_2, settings)
-		img_cloud_3 = love.graphics.newImage(R.bg.cloud_3, settings)
-		img_cloud_4 = love.graphics.newImage(R.bg.cloud_4, settings)
+		img_cloud_1 = love.graphics.newTexture(R.bg.cloud_1, settings)
+		img_cloud_2 = love.graphics.newTexture(R.bg.cloud_2, settings)
+		img_cloud_3 = love.graphics.newTexture(R.bg.cloud_3, settings)
+		img_cloud_4 = love.graphics.newTexture(R.bg.cloud_4, settings)
 
 		cloud_images = {
 			img_cloud_1,
@@ -3265,16 +3269,17 @@ function love.nogame()
 
 	function love.resize()
 		create_world()
+		g_step = g_t
 	end
 
 	function love.conf(t)
 		t.title = "L\195\150VE " .. love._version .. " (" .. love._version_codename .. ")"
-		t.gammacorrect = true
+		t.graphics.gammacorrect = true
 		t.modules.audio = false
 		t.modules.sound = false
 		t.modules.joystick = false
 		t.window.resizable = true
-		t.window.highdpi = true
+		t.highdpi = true
 
 		if love._os == "iOS" then
 			t.window.borderless = true

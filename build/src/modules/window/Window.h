@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -43,6 +43,10 @@ class Graphics;
 namespace window
 {
 
+// Applied when the window is first created.
+void setHighDPIAllowed(bool enable);
+bool isHighDPIAllowed();
+
 // Forward-declared so it can be used in the class methods. We can't define the
 // whole thing here because it uses the Window::Type enum.
 struct WindowSettings;
@@ -50,6 +54,8 @@ struct WindowSettings;
 class Window : public Module
 {
 public:
+
+	typedef void (*FileDialogCallback)(void *context, const std::vector<std::string> &files, const char *filtername, const char *err);
 
 	// Different window settings.
 	enum Setting
@@ -65,8 +71,9 @@ public:
 		SETTING_MIN_HEIGHT,
 		SETTING_BORDERLESS,
 		SETTING_CENTERED,
-		SETTING_DISPLAY,
-		SETTING_HIGHDPI,
+		SETTING_DISPLAYINDEX,
+		SETTING_DISPLAY, // Deprecated
+		SETTING_HIGHDPI, // Deprecated
 		SETTING_USE_DPISCALE,
 		SETTING_REFRESHRATE,
 		SETTING_X,
@@ -87,6 +94,14 @@ public:
 		MESSAGEBOX_WARNING,
 		MESSAGEBOX_INFO,
 		MESSAGEBOX_MAX_ENUM
+	};
+
+	enum FileDialogType
+	{
+		FILEDIALOG_OPENFILE,
+		FILEDIALOG_OPENFOLDER,
+		FILEDIALOG_SAVEFILE,
+		FILEDIALOG_MAX_ENUM
 	};
 
 	enum DisplayOrientation
@@ -124,10 +139,25 @@ public:
 		bool attachToWindow;
 	};
 
-	virtual ~Window();
+	struct FileDialogFilter
+	{
+		std::string name;
+		std::string pattern;
+	};
 
-	// Implements Module.
-	virtual ModuleType getModuleType() const { return M_WINDOW; }
+	struct FileDialogData
+	{
+		FileDialogType type;
+		std::string title;
+		std::string acceptLabel;
+		std::string cancelLabel;
+		std::string defaultName;
+		std::vector<FileDialogFilter> filters;
+		bool multiSelect;
+		bool attachToWindow;
+	};
+
+	virtual ~Window();
 
 	virtual void setGraphics(graphics::Graphics *graphics) = 0;
 
@@ -173,6 +203,7 @@ public:
 	virtual void minimize() = 0;
 	virtual void maximize() = 0;
 	virtual void restore() = 0;
+	virtual void focus() = 0;
 
 	virtual bool isMaximized() const = 0;
 	virtual bool isMinimized() const = 0;
@@ -184,6 +215,7 @@ public:
 	virtual bool hasMouseFocus() const = 0;
 
 	virtual bool isVisible() const = 0;
+	virtual bool isOccluded() const = 0;
 
 	virtual void setMouseGrab(bool grab) = 0;
 	virtual bool isMouseGrabbed() const = 0;
@@ -192,6 +224,8 @@ public:
 	virtual int getHeight() const = 0;
 	virtual int getPixelWidth() const = 0;
 	virtual int getPixelHeight() const = 0;
+
+	virtual void clampPositionInWindow(double *wx, double *wy) const = 0;
 
 	// Note: window-space coordinates are not necessarily the same as
 	// density-independent units (which toPixels and fromPixels use.)
@@ -209,41 +243,24 @@ public:
 	virtual double fromPixels(double x) const = 0;
 	virtual void fromPixels(double px, double py, double &wx, double &wy) const = 0;
 
-	virtual const void *getHandle() const = 0;
+	virtual void *getHandle() const = 0;
 
 	virtual bool showMessageBox(const std::string &title, const std::string &message, MessageBoxType type, bool attachtowindow) = 0;
 	virtual int showMessageBox(const MessageBoxData &data) = 0;
 
+	virtual void showFileDialog(const FileDialogData &data, FileDialogCallback callback, void *context) = 0;
+
 	virtual void requestAttention(bool continuous) = 0;
 
-	static bool getConstant(const char *in, Setting &out);
-	static bool getConstant(Setting in, const char *&out);
+	STRINGMAP_CLASS_DECLARE(Setting);
+	STRINGMAP_CLASS_DECLARE(FullscreenType);
+	STRINGMAP_CLASS_DECLARE(MessageBoxType);
+	STRINGMAP_CLASS_DECLARE(FileDialogType);
+	STRINGMAP_CLASS_DECLARE(DisplayOrientation);
 
-	static bool getConstant(const char *in, FullscreenType &out);
-	static bool getConstant(FullscreenType in, const char *&out);
-	static std::vector<std::string> getConstants(FullscreenType);
+protected:
 
-	static bool getConstant(const char *in, MessageBoxType &out);
-	static bool getConstant(MessageBoxType in, const char *&out);
-	static std::vector<std::string> getConstants(MessageBoxType);
-
-	static bool getConstant(const char *in, DisplayOrientation &out);
-	static bool getConstant(DisplayOrientation in, const char *&out);
-	static std::vector<std::string> getConstants(DisplayOrientation);
-
-private:
-
-	static StringMap<Setting, SETTING_MAX_ENUM>::Entry settingEntries[];
-	static StringMap<Setting, SETTING_MAX_ENUM> settings;
-
-	static StringMap<FullscreenType, FULLSCREEN_MAX_ENUM>::Entry fullscreenTypeEntries[];
-	static StringMap<FullscreenType, FULLSCREEN_MAX_ENUM> fullscreenTypes;
-
-	static StringMap<MessageBoxType, MESSAGEBOX_MAX_ENUM>::Entry messageBoxTypeEntries[];
-	static StringMap<MessageBoxType, MESSAGEBOX_MAX_ENUM> messageBoxTypes;
-
-	static StringMap<DisplayOrientation, ORIENTATION_MAX_ENUM>::Entry orientationEntries[];
-	static StringMap<DisplayOrientation, ORIENTATION_MAX_ENUM> orientations;
+	Window(const char *name);
 
 }; // Window
 
@@ -254,14 +271,13 @@ struct WindowSettings
 	int vsync = 1;
 	int msaa = 0;
 	bool stencil = true;
-	int depth = 0;
+	bool depth = false;
 	bool resizable = false;
 	int minwidth = 1;
 	int minheight = 1;
 	bool borderless = false;
 	bool centered = true;
-	int display = 0;
-	bool highdpi = false;
+	int displayindex = 0;
 	bool usedpiscale = true;
 	double refreshrate = 0.0;
 	bool useposition = false;

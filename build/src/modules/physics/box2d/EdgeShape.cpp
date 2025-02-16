@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -34,8 +34,8 @@ namespace box2d
 
 love::Type EdgeShape::type("EdgeShape", &Shape::type);
 
-EdgeShape::EdgeShape(b2EdgeShape *e, bool own)
-	: Shape(e, own)
+EdgeShape::EdgeShape(Body *body, const b2EdgeShape &e)
+	: Shape(body, e)
 {
 }
 
@@ -45,64 +45,39 @@ EdgeShape::~EdgeShape()
 
 void EdgeShape::setNextVertex(float x, float y)
 {
+	throwIfShapeNotValid();
 	b2EdgeShape *e = (b2EdgeShape *)shape;
 	b2Vec2 v(x, y);
 	e->m_vertex3 = Physics::scaleDown(v);
-	e->m_hasVertex3 = true;
+	e->m_oneSided = true;
 }
 
-void EdgeShape::setNextVertex()
+b2Vec2 EdgeShape::getNextVertex() const
 {
+	throwIfShapeNotValid();
 	b2EdgeShape *e = (b2EdgeShape *)shape;
-	e->m_hasVertex3 = false;
-}
-
-bool EdgeShape::getNextVertex(float &x, float &y) const
-{
-	b2EdgeShape *e = (b2EdgeShape *)shape;
-
-	if (e->m_hasVertex3)
-	{
-		b2Vec2 v = Physics::scaleUp(e->m_vertex3);
-		x = v.x;
-		y = v.y;
-		return true;
-	}
-
-	return false;
+	return Physics::scaleUp(e->m_vertex3);
 }
 
 void EdgeShape::setPreviousVertex(float x, float y)
 {
+	throwIfShapeNotValid();
 	b2EdgeShape *e = (b2EdgeShape *)shape;
 	b2Vec2 v(x, y);
 	e->m_vertex0 = Physics::scaleDown(v);
-	e->m_hasVertex0 = true;
+	e->m_oneSided = true;
 }
 
-void EdgeShape::setPreviousVertex()
+b2Vec2 EdgeShape::getPreviousVertex() const
 {
+	throwIfShapeNotValid();
 	b2EdgeShape *e = (b2EdgeShape *)shape;
-	e->m_hasVertex0 = false;
-}
-
-bool EdgeShape::getPreviousVertex(float &x, float &y) const
-{
-	b2EdgeShape *e = (b2EdgeShape *)shape;
-
-	if (e->m_hasVertex0)
-	{
-		b2Vec2 v = Physics::scaleUp(e->m_vertex0);
-		x = v.x;
-		y = v.y;
-		return true;
-	}
-
-	return false;
+	return Physics::scaleUp(e->m_vertex0);
 }
 
 int EdgeShape::getPoints(lua_State *L)
 {
+	throwIfShapeNotValid();
 	b2EdgeShape *e = (b2EdgeShape *)shape;
 	b2Vec2 v1 = Physics::scaleUp(e->m_vertex1);
 	b2Vec2 v2 = Physics::scaleUp(e->m_vertex2);

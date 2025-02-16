@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -20,10 +20,14 @@
 
 #include "common/version.h"
 #include "common/runtime.h"
+#include "common/Variant.h"
 #include "modules/love/love.h"
-#include <SDL.h>
+
+#include <SDL3/SDL.h>
 
 #ifdef LOVE_BUILD_EXE
+
+#include <SDL3/SDL_main.h>
 
 // Lua
 extern "C" {
@@ -33,13 +37,14 @@ extern "C" {
 }
 
 #ifdef LOVE_WINDOWS
+#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #endif // LOVE_WINDOWS
 
-#ifdef LOVE_MACOSX
-#include "common/macosx.h"
+#ifdef LOVE_MACOS
+#include "common/macos.h"
 #include <unistd.h>
-#endif // LOVE_MACOSX
+#endif // LOVE_MACOS
 
 #ifdef LOVE_IOS
 #include "common/ios.h"
@@ -83,8 +88,8 @@ static void get_app_arguments(int argc, char **argv, int &new_argc, char **&new_
 	// If it exists, add the love file in love.app/Contents/Resources/ to argv.
 	std::string loveResourcesPath;
 	bool fused = true;
-#if defined(LOVE_MACOSX)
-	loveResourcesPath = love::macosx::getLoveInResources();
+#if defined(LOVE_MACOS)
+	loveResourcesPath = love::macos::getLoveInResources();
 #elif defined(LOVE_IOS)
 	loveResourcesPath = love::ios::getLoveInResources(fused);
 #endif
@@ -97,7 +102,7 @@ static void get_app_arguments(int argc, char **argv, int &new_argc, char **&new_
 		if (fused)
 			temp_argv.insert(it + 1, std::string("--fused"));
 	}
-#ifdef LOVE_MACOSX
+#ifdef LOVE_MACOS
 	else
 	{
 		// Check for a drop file string, if the app wasn't launched in a
@@ -107,7 +112,7 @@ static void get_app_arguments(int argc, char **argv, int &new_argc, char **&new_
 		if (!isatty(STDIN_FILENO))
 		{
 			// Static to keep the same value after love.event.equit("restart").
-			static std::string dropfilestr = love::macosx::checkDropEvents();
+			static std::string dropfilestr = love::macos::checkDropEvents();
 			if (!dropfilestr.empty())
 				temp_argv.insert(temp_argv.begin() + 1, dropfilestr);
 		}
@@ -145,7 +150,22 @@ enum DoneAction
 	DONE_RESTART,
 };
 
-static DoneAction runlove(int argc, char **argv, int &retval)
+static void print_usage()
+{
+    // when editing this message, change it at boot.lua too
+    printf("LOVE is an *awesome* framework you can use to make 2D games in Lua\n"
+        "https://love2d.org\n"
+        "\n"
+        "usage:\n"
+        "    love --version                  prints LOVE version and quits\n"
+        "    love --help                     prints this message and quits\n"
+        "    love path/to/gamedir            runs the game from the given directory which contains a main.lua file\n"
+        "    love path/to/packagedgame.love  runs the packaged game from the provided .love file\n"
+        "    love path/to/file.lua           runs the game from the given .lua file\n"
+        );
+}
+
+static DoneAction runlove(int argc, char **argv, int &retval, love::Variant &restartvalue)
 {
 	// Oh, you just want the version? Okay!
 	if (argc > 1 && strcmp(argv[1], "--version") == 0)
@@ -159,13 +179,20 @@ static DoneAction runlove(int argc, char **argv, int &retval)
 		return DONE_QUIT;
 	}
 
+	if (argc > 1 && strcmp(argv[1], "--help") == 0)
+	{
+		print_usage();
+		retval = 0;
+		return DONE_QUIT;
+	}
+
 	// Create the virtual machine.
 	lua_State *L = luaL_newstate();
 	luaL_openlibs(L);
 
 	// LuaJIT-specific setup needs to be done as early as possible - before
 	// get_app_arguments because that loads external library code. This is also
-	// loaded inside require("love"). Note that it doesn't use the love table.
+	// loaded inside love's Lua threads. Note that it doesn't use the love table.
 	love_preload(L, luaopen_love_jitsetup, "love.jitsetup");
 	lua_getglobal(L, "require");
 	lua_pushstring(L, "love.jitsetup");
@@ -217,6 +244,11 @@ static DoneAction runlove(int argc, char **argv, int &retval)
 		lua_setfield(L, -2, "_exe");
 	}
 
+	// Set love.restart = restartvalue, and clear restartvalue.
+	love::luax_pushvariant(L, restartvalue);
+	lua_setfield(L, -2, "restart");
+	restartvalue = love::Variant();
+
 	// Pop the love table returned by require "love".
 	lua_pop(L, 1);
 
@@ -242,10 +274,19 @@ static DoneAction runlove(int argc, char **argv, int &retval)
 
 	// if love.boot() returns "restart", we'll start up again after closing this
 	// Lua state.
-	if (lua_type(L, -1) == LUA_TSTRING && strcmp(lua_tostring(L, -1), "restart") == 0)
-		done = DONE_RESTART;
-	if (lua_isnumber(L, -1))
-		retval = (int) lua_tonumber(L, -1);
+	int retidx = stackpos;
+	if (!lua_isnoneornil(L, retidx))
+	{
+		if (lua_type(L, retidx) == LUA_TSTRING && strcmp(lua_tostring(L, retidx), "restart") == 0)
+			done = DONE_RESTART;
+		if (lua_isnumber(L, retidx))
+			retval = (int) lua_tonumber(L, retidx);
+
+		// Disallow userdata (love objects) from being referenced by the restart
+		// value.
+		if (retidx < lua_gettop(L))
+			restartvalue = love::luax_checkvariant(L, retidx + 1, false);
+	}
 
 	lua_close(L);
 
@@ -272,10 +313,11 @@ int main(int argc, char **argv)
 
 	int retval = 0;
 	DoneAction done = DONE_QUIT;
+	love::Variant restartvalue;
 
 	do
 	{
-		done = runlove(argc, argv, retval);
+		done = runlove(argc, argv, retval, restartvalue);
 
 #ifdef LOVE_IOS
 		// on iOS we should never programmatically exit the app, so we'll just
