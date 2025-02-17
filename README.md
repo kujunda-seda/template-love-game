@@ -70,8 +70,18 @@ cd temp-love
 git clone git@github.com:love2d/love.git
 ```
 2. Copy `src` and `platform/xcode` folders into the `build` folder in your/this repo. You can skip `platform/unix` and other files. You can delete the `temp-love` folder now.
-3. Download the required iOS libraries from https://love2d.org > Other downloads > iOS > libraries (no need to download sources). Unzip the archive and move the `iOS/libraries` folder into the `build/platform/xcode/ios` folder, so that the the final path would be e.g. `build/platform/xcode/ios/libraries/Lua.xcframework`. Full instructions are at the [LÖVE website](https://love2d.org/wiki/Getting_Started#iOS), but this will suffice.
-4. Don't forget to reconfigure the project after as outlined in the Distribution section below.
+
+~~3. Download the required iOS libraries from https://love2d.org > Other downloads > iOS > libraries (no need to download sources). Unzip the archive and move the `iOS/libraries` folder into the `build/platform/xcode/ios` folder, so that the the final path would be e.g. `build/platform/xcode/ios/libraries/Lua.xcframework`. Full instructions are at the [LÖVE website](https://love2d.org/wiki/Getting_Started#iOS), but this will suffice.~~
+
+3. Download the required iOS libraries by cloning [love-apple-dependencies](https://github.com/love2d/love-apple-dependencies) repo and copying `iOS/libraries` and `shared` folders from the cloned repo into your `build/platform/xcode` folder, so that the final paths would be like these:
+    - `build/platform/xcode/ios/libraries/Lua.xcframework`
+    - `build/platform/xcode/shared/Frameworks/libraries/SDL3.xcframework`
+
+4. (Optional, for macOS apps only) You can also add macOS libraries if you want to build `love-macosx` target. Then you need to copy `macOS/Frameworks` into `build/platform/xcode/macosx/` and add `build/license.txt` file. You can use one from `love` repo or use your own.
+
+Original instructions are provided here [LÖVE website](https://love2d.org/wiki/Getting_Started#iOS) and updated [here](https://github.com/love2d/love-apple-dependencies), but this will suffice.
+
+5. Don't forget to reconfigure the project after as outlined in the [Distribution](#distribution) section below.
 
 ## Running locally
 In VSCode:
@@ -86,14 +96,25 @@ In addition to running the project, it will output `print` statements into the c
 You can also use a separate debugging plugin for VSCode [Local Lua Debugger](https://marketplace.visualstudio.com/items?itemName=tomblind.local-lua-debugger-vscode) if you need.
 
 ## Distribution
-1. Before you can configure XCode, you'll need an Apple Developer account at [developer.apple.com](https://developer.apple.com/account) and a new [bundle identifier](https://developer.apple.com/account/resources/identifiers/list) for the app.
+1. Before you can configure Xcode, you'll need an Apple Developer account at [developer.apple.com](https://developer.apple.com/account) and a new [bundle identifier](https://developer.apple.com/account/resources/identifiers/list) for the app. Detailed instructions are subject to change:
+    - After you log in to **Identifiers** page, hit `+`
+    - Choose **App IDs** > Continue > **App**
+    - Enter free form **Description**, choose **Bundle ID > Explicit**, enter ID in format `com.yourcompany.yourgame`
+    - (You can change **Capabilities** later)
+    - Continue > Register
 
-2. Open `love.xcodeproj` in XCode.
-3. With your project selected in sidebar, choose `love-ios` from Targets > Signing & Capabilities and select:
+3. In `build/platform/xcode` folder open `love.xcodeproj` in Xcode.
+4. With your project selected in sidebar, choose `love-ios` from Targets > Signing & Capabilities and select:
 
 - \+ Automatically manage signing
 - Team (if you log in with your developer account, you will see it in drop down)
-- Bundle identifier (copy it from https://developer.apple.com/account/resources/identifiers/list)
+- Bundle identifier: copy the one you created from https://developer.apple.com/account/resources/identifiers/list
+
+5. Select run target: **Product** > **Scheme** > love-ios via menu or in the toolbar and choose any iPhone as a target.
+6. You will need to add missing purpose strings for distribution to TestFlight/App Store. Go to your target `love-ios` > Info (or Supporting Files > love-ios) right-click `Add Row` and add two rows with values `App requires usage for functioning` (you can change it later to appropriate reason):
+    - Privacy - Camera Usage Description
+    - Privacy - Bluetooth Always Usage Description
+    - App Uses Non-Exempt Encryption: NO
 
 There are 2 options to test the game:
 #### Option 1. Airdrop - quick for local testing
@@ -105,10 +126,23 @@ The easiest way to test your game on iOS Simulator or device is running `love-io
   - Copy items if needed
   - Create folder references
 
-2.2. (Optional, but desired) Change the name: File inspector (right sidebar) for project > Identity and Type > Name. Proceed with the renaming of the linked files and targets as well.  
+2.2. (Optional, but desired) Change the name: File inspector (right sidebar) for project > Identity and Type > Name. Proceed with the renaming of the linked files and targets as well. (Xcode 16.2 crashed after the rename, but it was successful).
 
-2.3. (Optional, but desired) Change the `Version` in the project > Identity settings, e.g. `1.0` or `0.0.1`.
+2.3. (Optional, but desired) Change the `Version` in the project > Identity settings, e.g. `1.0` or `0.0.1`. You can also set **Display Name** and **Build** (will be automatically incrmented if not set).
 
 2.4  (Optional) Change the icon of the app by providing required images in Project > Images > iOS AppIcon (see Apple Guidelines for it).
 
-2.5. In the main screen top bar select `[name]-ios` target > Any iOS Device, run menu Product > Archive. Your app is now good to be distributed in TestFlight with **Distribute App**.
+2.5. In the main screen top bar select `[name]-ios` target > Any iOS Device, run menu Product > Archive. Your app is now good to be distributed in TestFlight.
+
+2.6. For first time distribution you need to create an app in the https://appstoreconnect.apple.com/apps
+    - Apps > Hit `+` > New App
+    - Choose Platform, e.g. iOS
+    - Choose unique name (can't be the same app in the App Store, you can change it later)
+    - Choose language
+    - Select Bundle ID created before
+    - Enter SKU in your preferred format for the developer account
+    - Choose how other users can access the app
+
+2.7. Back to Xcode, open **Window** > **Organizer** > Select build > **Distribute App** > **App Store Connect**. You might get an warning about `Upload Symbols Failed` for certain frameworks (e.g. SDL3), but it doesn't prevent the app from the successful upload. You can create select a **Custom** > **App Store Connect** > **Upload** (wait) > Deselect **Upload your app's symbols** to skip the error.
+
+2.8. Wait until the app finished processing and assign Internal testing group. The build will be available in TestFlight.
