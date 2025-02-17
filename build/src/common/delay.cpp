@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -20,16 +20,16 @@
 
 #include "delay.h"
 
-#include <SDL_timer.h>
+#include <SDL3/SDL_timer.h>
 
 namespace love
 {
 
-void sleep(unsigned int ms)
+void sleep(double ms)
 {
 	// We don't need to initialize the SDL timer subsystem for SDL_Delay to
 	// function - and doing so causes SDL to create a worker thread.
-	SDL_Delay(ms);
+	SDL_DelayNS(SDL_NS_PER_MS * ms);
 }
 
 } // love

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -22,10 +22,10 @@
 #define LOVE_SOUND_LULLABY_FLAC_DECODER_H
 
 // LOVE
-#include "common/Data.h"
+#include "common/Stream.h"
 #include "sound/Decoder.h"
 
-#include "dr_flac/dr_flac.h"
+#include "dr/dr_flac.h"
 #include <string.h>
 
 namespace love
@@ -38,23 +38,22 @@ namespace lullaby
 class FLACDecoder : public Decoder
 {
 public:
-	FLACDecoder(Data *data, int bufferSize);
+	FLACDecoder(Stream *stream, int bufferSize);
 	~FLACDecoder();
 
-	static bool accepts(const std::string &ext);
-	love::sound::Decoder *clone();
-	int decode();
-	bool seek(double s);
-	bool rewind();
-	bool isSeekable();
-	int getChannelCount() const;
-	int getBitDepth() const;
-	int getSampleRate() const;
-	double getDuration();
+	love::sound::Decoder *clone() override;
+	int decode() override;
+	bool seek(double s) override;
+	bool rewind() override;
+	bool isSeekable() override;
+	int getChannelCount() const override;
+	int getBitDepth() const override;
+	int getSampleRate() const override;
+	double getDuration() override;
 
 private:
 	drflac *flac;
-}; // Decoder
+}; // FLACDecoder
 
 } // lullaby
 } // sound

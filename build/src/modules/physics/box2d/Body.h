@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -28,7 +28,7 @@
 #include "physics/Body.h"
 
 // Box2D
-#include <Box2D/Box2D.h>
+#include <box2d/Box2D.h>
 
 namespace love
 {
@@ -39,17 +39,6 @@ namespace box2d
 // Forward declarations.
 class World;
 class Shape;
-class Fixture;
-
-/**
- * This struct is stored in a void pointer in the Box2D Body class. For now, all
- * we need is a Lua reference to arbitrary data, but we might need more later.
- **/
-struct bodyudata
-{
-	// Reference to arbitrary data.
-	Reference *ref = nullptr;
-};
 
 /**
  * A Body is an entity which has position and orientation
@@ -67,7 +56,6 @@ public:
 	friend class CircleShape;
 	friend class PolygonShape;
 	friend class Shape;
-	friend class Fixture;
 
 	// Public because joints et al ask for b2body
 	b2Body *body;
@@ -130,6 +118,11 @@ public:
 	float getAngularVelocity() const;
 
 	/**
+	 * Get the current Body kinematic state. (Position, angle, velocity, angle velocity).
+	 **/
+	void getKinematicState(b2Vec2 &pos_o, float &a_o, b2Vec2& vel_o, float &da_o) const;
+
+	/**
 	 * Gets the Body's mass.
 	 **/
 	float getMass() const;
@@ -143,6 +136,8 @@ public:
 	 * Gets mass properties.
 	 **/
 	int getMassData(lua_State *L);
+
+	bool hasCustomMassData() const { return hasCustomMass; }
 
 	/**
 	 * Gets the Body's angular damping.
@@ -218,6 +213,11 @@ public:
 	 * Sets the current spin of the Body.
 	 **/
 	void setAngularVelocity(float r);
+
+	/**
+	 * Set the current Body kinematic state. (Position, angle, velocity, angle velocity).
+	 **/
+	void setKinematicState(b2Vec2 pos, float a, b2Vec2 vel, float da);
 
 	/**
 	 * Sets the current position of the Body.
@@ -356,7 +356,7 @@ public:
 	 * Checks whether a Body is active or not. An inactive body
 	 * cannot be interacted with.
 	 **/
-	bool isActive() const;
+	bool isEnabled() const;
 
 	/**
 	 * Checks whether a Body is awake or not. A Body
@@ -373,7 +373,7 @@ public:
 	/**
 	 * Changes the body's active state.
 	 **/
-	void setActive(bool active);
+	void setEnabled(bool enabled);
 
 	/**
 	 * Changes the body's sleep state.
@@ -391,10 +391,14 @@ public:
 	World *getWorld() const;
 
 	/**
-	 * Get an array of all the Fixtures attached to this Body.
-	 * @return An array of Fixtures.
+	 * Gets the first Shape attached to this Body.
 	 **/
-	int getFixtures(lua_State *L) const;
+	Shape *getShape() const;
+
+	/**
+	 * Get an array of all the Shapes attached to this Body.
+	 **/
+	int getShapes(lua_State *L) const;
 
 	/**
 	 * Get an array of all Joints attached to this Body.
@@ -431,7 +435,10 @@ private:
 	// unowned?
 	World *world;
 
-	bodyudata *udata;
+	bool hasCustomMass;
+
+	// Reference to arbitrary data.
+	Reference* ref = nullptr;
 
 }; // Body
 

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -26,10 +26,12 @@
 #include "audio/Source.h"
 
 // SDL
-#include <SDL_events.h>
+#include <SDL3/SDL_events.h>
 
-// STL
-#include <map>
+namespace love::window
+{
+class Window;
+}
 
 namespace love
 {
@@ -42,9 +44,6 @@ class Event : public love::event::Event
 {
 public:
 
-	// Implements Module.
-	const char *getName() const;
-
 	Event();
 	virtual ~Event();
 
@@ -53,19 +52,15 @@ public:
 	 * from devices and places it on the event queue. Normally not needed if you poll
 	 * for events.
 	 **/
-	void pump();
+	void pump(float waitTimeout = 0.0f) override;
 
-	/**
-	 * Waits for the next event (indefinitely). Useful for creating games where
-	 * the screen and game state only needs updating when the user interacts with
-	 * the window.
-	 **/
-	Message *wait();
+	// Deprecated.
+	Message *wait() override;
 
 	/**
 	 * Clears the event queue.
 	 */
-	void clear();
+	void clear() override;
 
 private:
 
@@ -73,10 +68,9 @@ private:
 
 	Message *convert(const SDL_Event &e);
 	Message *convertJoystickEvent(const SDL_Event &e) const;
-	Message *convertWindowEvent(const SDL_Event &e);
+	Message *convertWindowEvent(const SDL_Event &e, love::window::Window *win);
 
-	static std::map<SDL_Keycode, love::keyboard::Keyboard::Key> createKeyMap();
-	static std::map<SDL_Keycode, love::keyboard::Keyboard::Key> keys;
+	bool insideEventPump = false;
 
 }; // Event
 

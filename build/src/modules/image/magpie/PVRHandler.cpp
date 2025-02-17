@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -222,67 +222,67 @@ static PixelFormat convertFormat(PVRV3PixelFormat format, PVRV3ChannelType chann
 	switch (format)
 	{
 	case ePVRTPF_PVRTCI_2bpp_RGB:
-		return PIXELFORMAT_PVR1_RGB2;
+		return PIXELFORMAT_PVR1_RGB2_UNORM;
 	case ePVRTPF_PVRTCI_2bpp_RGBA:
-		return PIXELFORMAT_PVR1_RGBA2;
+		return PIXELFORMAT_PVR1_RGBA2_UNORM;
 	case ePVRTPF_PVRTCI_4bpp_RGB:
-		return PIXELFORMAT_PVR1_RGB4;
+		return PIXELFORMAT_PVR1_RGB4_UNORM;
 	case ePVRTPF_PVRTCI_4bpp_RGBA:
-		return PIXELFORMAT_PVR1_RGBA4;
+		return PIXELFORMAT_PVR1_RGBA4_UNORM;
 	case ePVRTPF_ETC1:
-		return PIXELFORMAT_ETC1;
+		return PIXELFORMAT_ETC1_UNORM;
 	case ePVRTPF_DXT1:
-		return PIXELFORMAT_DXT1;
+		return PIXELFORMAT_DXT1_UNORM;
 	case ePVRTPF_DXT3:
-		return PIXELFORMAT_DXT3;
+		return PIXELFORMAT_DXT3_UNORM;
 	case ePVRTPF_DXT5:
-		return PIXELFORMAT_DXT5;
+		return PIXELFORMAT_DXT5_UNORM;
 	case ePVRTPF_BC4:
-		return snorm ? PIXELFORMAT_BC4s : PIXELFORMAT_BC4;
+		return snorm ? PIXELFORMAT_BC4_SNORM : PIXELFORMAT_BC4_UNORM;
 	case ePVRTPF_BC5:
-		return snorm ? PIXELFORMAT_BC5s : PIXELFORMAT_BC5;
+		return snorm ? PIXELFORMAT_BC5_SNORM : PIXELFORMAT_BC5_UNORM;
 	case ePVRTPF_BC6:
-		return snorm ? PIXELFORMAT_BC6Hs : PIXELFORMAT_BC6H;
+		return snorm ? PIXELFORMAT_BC6H_FLOAT : PIXELFORMAT_BC6H_UFLOAT;
 	case ePVRTPF_BC7:
-		return PIXELFORMAT_BC7;
+		return PIXELFORMAT_BC7_UNORM;
 	case ePVRTPF_ETC2_RGB:
-		return PIXELFORMAT_ETC2_RGB;
+		return PIXELFORMAT_ETC2_RGB_UNORM;
 	case ePVRTPF_ETC2_RGBA:
-		return PIXELFORMAT_ETC2_RGBA;
+		return PIXELFORMAT_ETC2_RGBA_UNORM;
 	case ePVRTPF_ETC2_RGBA1:
-		return PIXELFORMAT_ETC2_RGBA1;
+		return PIXELFORMAT_ETC2_RGBA1_UNORM;
 	case ePVRTPF_EAC_R:
-		return snorm ? PIXELFORMAT_EAC_Rs : PIXELFORMAT_EAC_R;
+		return snorm ? PIXELFORMAT_EAC_R_SNORM : PIXELFORMAT_EAC_R_UNORM;
 	case ePVRTPF_EAC_RG:
-		return snorm ? PIXELFORMAT_EAC_RGs : PIXELFORMAT_EAC_RG;
+		return snorm ? PIXELFORMAT_EAC_RG_SNORM : PIXELFORMAT_EAC_RG_UNORM;
 	case ePVRTPF_ASTC_4x4:
-		return PIXELFORMAT_ASTC_4x4;
+		return PIXELFORMAT_ASTC_4x4_UNORM;
 	case ePVRTPF_ASTC_5x4:
-		return PIXELFORMAT_ASTC_5x4;
+		return PIXELFORMAT_ASTC_5x4_UNORM;
 	case ePVRTPF_ASTC_5x5:
-		return PIXELFORMAT_ASTC_5x5;
+		return PIXELFORMAT_ASTC_5x5_UNORM;
 	case ePVRTPF_ASTC_6x5:
-		return PIXELFORMAT_ASTC_6x5;
+		return PIXELFORMAT_ASTC_6x5_UNORM;
 	case ePVRTPF_ASTC_6x6:
-		return PIXELFORMAT_ASTC_6x6;
+		return PIXELFORMAT_ASTC_6x6_UNORM;
 	case ePVRTPF_ASTC_8x5:
-		return PIXELFORMAT_ASTC_8x5;
+		return PIXELFORMAT_ASTC_8x5_UNORM;
 	case ePVRTPF_ASTC_8x6:
-		return PIXELFORMAT_ASTC_8x6;
+		return PIXELFORMAT_ASTC_8x6_UNORM;
 	case ePVRTPF_ASTC_8x8:
-		return PIXELFORMAT_ASTC_8x8;
+		return PIXELFORMAT_ASTC_8x8_UNORM;
 	case ePVRTPF_ASTC_10x5:
-		return PIXELFORMAT_ASTC_10x5;
+		return PIXELFORMAT_ASTC_10x5_UNORM;
 	case ePVRTPF_ASTC_10x6:
-		return PIXELFORMAT_ASTC_10x6;
+		return PIXELFORMAT_ASTC_10x6_UNORM;
 	case ePVRTPF_ASTC_10x8:
-		return PIXELFORMAT_ASTC_10x8;
+		return PIXELFORMAT_ASTC_10x8_UNORM;
 	case ePVRTPF_ASTC_10x10:
-		return PIXELFORMAT_ASTC_10x10;
+		return PIXELFORMAT_ASTC_10x10_UNORM;
 	case ePVRTPF_ASTC_12x10:
-		return PIXELFORMAT_ASTC_12x10;
+		return PIXELFORMAT_ASTC_12x10_UNORM;
 	case ePVRTPF_ASTC_12x12:
-		return PIXELFORMAT_ASTC_12x12;
+		return PIXELFORMAT_ASTC_12x12_UNORM;
 	default:
 		return PIXELFORMAT_UNKNOWN;
 	}
@@ -475,7 +475,7 @@ bool PVRHandler::canParseCompressed(Data *data)
 	return false;
 }
 
-StrongRef<CompressedMemory> PVRHandler::parseCompressed(Data *filedata, std::vector<StrongRef<CompressedSlice>> &images, PixelFormat &format, bool &sRGB)
+StrongRef<ByteData> PVRHandler::parseCompressed(Data *filedata, std::vector<StrongRef<CompressedSlice>> &images, PixelFormat &format)
 {
 	if (!canParseCompressed(filedata))
 		throw love::Exception("Could not decode compressed data (not a PVR file?)");
@@ -510,6 +510,9 @@ StrongRef<CompressedMemory> PVRHandler::parseCompressed(Data *filedata, std::vec
 
 	PixelFormat cformat = convertFormat(pixelformat, channeltype);
 
+	if (header3.colorSpace == 1)
+		cformat = getSRGBPixelFormat(cformat);
+
 	if (cformat == PIXELFORMAT_UNKNOWN)
 		throw love::Exception("Could not parse PVR file: unsupported image format.");
 
@@ -525,8 +528,8 @@ StrongRef<CompressedMemory> PVRHandler::parseCompressed(Data *filedata, std::vec
 	if (filedata->getSize() < fileoffset + totalsize)
 		throw love::Exception("Could not parse PVR file: invalid size calculation.");
 
-	StrongRef<CompressedMemory> memory;
-	memory.set(new CompressedMemory(totalsize), Acquire::NORETAIN);
+	;
+	StrongRef<ByteData> memory(new ByteData(totalsize, false), Acquire::NORETAIN);
 
 	size_t curoffset = 0;
 	const uint8 *filebytes = (uint8 *) filedata->getData() + fileoffset;
@@ -541,7 +544,7 @@ StrongRef<CompressedMemory> PVRHandler::parseCompressed(Data *filedata, std::vec
 		int width = std::max((int) header3.width >> i, 1);
 		int height = std::max((int) header3.height >> i, 1);
 
-		memcpy(memory->data + curoffset, filebytes + curoffset, mipsize);
+		memcpy((uint8 *) memory->getData() + curoffset, filebytes + curoffset, mipsize);
 
 		auto slice = new CompressedSlice(cformat, width, height, memory, curoffset, mipsize);
 		images.push_back(slice);
@@ -551,8 +554,6 @@ StrongRef<CompressedMemory> PVRHandler::parseCompressed(Data *filedata, std::vec
 	}
 
 	format = cformat;
-	sRGB = (header3.colorSpace == 1);
-
 	return memory;
 }
 

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -23,7 +23,7 @@
 #include "window/sdl/Window.h"
 
 // SDL
-#include <SDL_mouse.h>
+#include <SDL3/SDL_mouse.h>
 
 namespace love
 {
@@ -31,6 +31,14 @@ namespace mouse
 {
 namespace sdl
 {
+
+static SDL_Window *getSDLWindow()
+{
+	auto window = Module::getInstance<window::Window>(Module::M_WINDOW);
+	if (window)
+		return (SDL_Window *) window->getHandle();
+	return nullptr;
+}
 
 // SDL reports mouse coordinates in the window coordinate system in OS X, but
 // we want them in pixel coordinates (may be different with high-DPI enabled.)
@@ -49,13 +57,16 @@ static void DPIToWindowCoords(double *x, double *y)
 		window->DPIToWindowCoords(x, y);
 }
 
-const char *Mouse::getName() const
+static void clampToWindow(double *x, double *y)
 {
-	return "love.mouse.sdl";
+	auto window = Module::getInstance<window::Window>(Module::M_WINDOW);
+	if (window)
+		window->clampPositionInWindow(x, y);
 }
 
 Mouse::Mouse()
-	: curCursor(nullptr)
+	: love::mouse::Mouse("love.mouse.sdl")
+	, curCursor(nullptr)
 {
 	// SDL may need the video subsystem in order to clean up the cursor when
 	// quitting. Subsystems are reference-counted.
@@ -73,7 +84,7 @@ Mouse::~Mouse()
 	SDL_QuitSubSystem(SDL_INIT_VIDEO);
 }
 
-love::mouse::Cursor *Mouse::newCursor(love::image::ImageData *data, int hotx, int hoty)
+love::mouse::Cursor *Mouse::newCursor(const std::vector<image::ImageData *> &data, int hotx, int hoty)
 {
 	return new Cursor(data, hotx, hoty);
 }
@@ -117,35 +128,21 @@ bool Mouse::isCursorSupported() const
 	return SDL_GetDefaultCursor() != nullptr;
 }
 
-double Mouse::getX() const
-{
-	int x;
-	SDL_GetMouseState(&x, nullptr);
-
-	double dx = (double) x;
-	windowToDPICoords(&dx, nullptr);
-
-	return dx;
-}
-
-double Mouse::getY() const
-{
-	int y;
-	SDL_GetMouseState(nullptr, &y);
-
-	double dy = (double) y;
-	windowToDPICoords(nullptr, &dy);
-
-	return dy;
-}
-
 void Mouse::getPosition(double &x, double &y) const
 {
-	int mx, my;
+	float mx, my;
 	SDL_GetMouseState(&mx, &my);
 
 	x = (double) mx;
 	y = (double) my;
+
+	// SDL reports mouse coordinates outside the window bounds when click-and-
+	// dragging. For compatibility we clamp instead since user code may not be
+	// able to handle out-of-bounds coordinates. SDL has a hint to turn off
+	// auto capture, but it doesn't report the mouse's position at the edge of
+	// the window if the mouse moves fast enough when it's off.
+	clampToWindow(&x, &y);
+
 	windowToDPICoords(&x, &y);
 }
 
@@ -166,19 +163,45 @@ void Mouse::setPosition(double x, double y)
 	SDL_PumpEvents();
 }
 
-void Mouse::setX(double x)
+void Mouse::getGlobalPosition(double &x, double &y, int &displayindex) const
 {
-	setPosition(x, getY());
-}
+	float globalx, globaly;
+	SDL_GetGlobalMouseState(&globalx, &globaly);
 
-void Mouse::setY(double y)
-{
-	setPosition(getX(), y);
+	auto mx = globalx;
+	auto my = globaly;
+
+	int displaycount = 0;
+	SDL_DisplayID *displays = SDL_GetDisplays(&displaycount);
+
+	for (displayindex = 0; displayindex < displaycount; displayindex++)
+	{
+		SDL_Rect r = {};
+		SDL_GetDisplayBounds(displays[displayindex], &r);
+
+		SDL_FRect frect = {(float)r.x, (float)r.y, (float)r.w, (float)r.h};
+
+		mx -= frect.x;
+		my -= frect.y;
+
+		SDL_FPoint p = { globalx, globaly };
+		if (SDL_PointInRectFloat(&p, &frect))
+			break;
+	}
+
+	if (displayindex >= displaycount)
+		displayindex = 0;
+
+	x = (double)mx;
+	y = (double)my;
 }
 
 void Mouse::setVisible(bool visible)
 {
-	SDL_ShowCursor(visible ? SDL_ENABLE : SDL_DISABLE);
+	if (visible)
+		SDL_ShowCursor();
+	else
+		SDL_HideCursor();
 }
 
 bool Mouse::isDown(const std::vector<int> &buttons) const
@@ -202,7 +225,7 @@ bool Mouse::isDown(const std::vector<int> &buttons) const
 			break;
 		}
 
-		if (buttonstate & SDL_BUTTON(button))
+		if (buttonstate & SDL_BUTTON_MASK(button))
 			return true;
 	}
 
@@ -211,7 +234,7 @@ bool Mouse::isDown(const std::vector<int> &buttons) const
 
 bool Mouse::isVisible() const
 {
-	return SDL_ShowCursor(SDL_QUERY) == SDL_ENABLE;
+	return SDL_CursorVisible();
 }
 
 void Mouse::setGrabbed(bool grab)
@@ -232,12 +255,18 @@ bool Mouse::isGrabbed() const
 
 bool Mouse::setRelativeMode(bool relative)
 {
-	return SDL_SetRelativeMouseMode(relative ? SDL_TRUE : SDL_FALSE) == 0;
+	SDL_Window *sdlwindow = getSDLWindow();
+	if (sdlwindow == nullptr)
+		return false;
+	return SDL_SetWindowRelativeMouseMode(sdlwindow, relative);
 }
 
 bool Mouse::getRelativeMode() const
 {
-	return SDL_GetRelativeMouseMode() != SDL_FALSE;
+	SDL_Window *sdlwindow = getSDLWindow();
+	if (sdlwindow == nullptr)
+		return false;
+	return SDL_GetWindowRelativeMouseMode(sdlwindow);
 }
 
 } // sdl

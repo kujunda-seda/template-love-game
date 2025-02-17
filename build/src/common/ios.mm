@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -19,6 +19,9 @@
  **/
 
 #include "ios.h"
+#include "apple.h"
+
+using namespace love::apple;
 
 #ifdef LOVE_IOS
 
@@ -32,9 +35,16 @@
 
 #include <vector>
 
+#if __has_include(<SDL3/SDL_events.h>)
+#include <SDL3/SDL_events.h>
+#include <SDL3/SDL_video.h>
+#include <SDL3/SDL_version.h>
+#else
 #include <SDL_events.h>
 #include <SDL_video.h>
 #include <SDL_syswm.h>
+#include <SDL_version.h>
+#endif
 
 static NSArray *getLovesInDocuments();
 static bool deleteFileInDocuments(NSString *filename);
@@ -127,18 +137,14 @@ static bool deleteFileInDocuments(NSString *filename);
 
 @end
 
-static NSString *getDocumentsDirectory()
-{
-	NSArray *docdirs = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
-	return docdirs[0];
-}
-
 static NSArray *getLovesInDocuments()
 {
+	std::string docdir = getUserDirectory(USER_DIRECTORY_DOCUMENTS);
+
 	NSMutableArray *paths = [NSMutableArray new];
 
 	NSFileManager *manager = [NSFileManager defaultManager];
-	NSDirectoryEnumerator *enumerator = [manager enumeratorAtPath:getDocumentsDirectory()];
+	NSDirectoryEnumerator *enumerator = [manager enumeratorAtPath:@(docdir.c_str())];
 
 	NSString *path = nil;
 	while ((path = [enumerator nextObject]))
@@ -150,14 +156,16 @@ static NSArray *getLovesInDocuments()
 			[paths addObject:path.stringByDeletingLastPathComponent];
 	}
 
+	[paths sortUsingSelector:@selector(localizedCaseInsensitiveCompare:)];
+
 	return paths;
 }
 
 static bool deleteFileInDocuments(NSString *filename)
 {
-	NSString *documents = getDocumentsDirectory();
+	std::string docdir = getUserDirectory(USER_DIRECTORY_DOCUMENTS);
 
-	NSString *file = [documents stringByAppendingPathComponent:filename];
+	NSString *file = [@(docdir.c_str()) stringByAppendingPathComponent:filename];
 	bool success = [[NSFileManager defaultManager] removeItemAtPath:file error:nil];
 
 	if (success)
@@ -166,19 +174,33 @@ static bool deleteFileInDocuments(NSString *filename)
 	return success;
 }
 
-static int dropFileEventFilter(void *userdata, SDL_Event *event)
+#if SDL_VERSION_ATLEAST(3, 0, 0)
+static bool
+#else
+static int
+#endif
+dropFileEventFilter(void *userdata, SDL_Event *event)
 {
 	@autoreleasepool
 	{
+#if SDL_VERSION_ATLEAST(3, 0, 0)
+		if (event->type != SDL_EVENT_DROP_FILE)
+#else
 		if (event->type != SDL_DROPFILE)
+#endif
 			return 1;
 
+#if SDL_VERSION_ATLEAST(3, 0, 0)
+		NSString *fname = @(event->drop.data);
+#else
 		NSString *fname = @(event->drop.file);
+#endif
 		NSFileManager *fmanager = [NSFileManager defaultManager];
 
 		if ([fmanager fileExistsAtPath:fname] && [fname.pathExtension isEqual:@"love"])
 		{
-			NSString *documents = getDocumentsDirectory();
+			std::string docdir = getUserDirectory(USER_DIRECTORY_DOCUMENTS);
+			NSString *documents = @(docdir.c_str());
 
 			documents = documents.stringByStandardizingPath.stringByResolvingSymlinksInPath;
 			fname = fname.stringByStandardizingPath.stringByResolvingSymlinksInPath;
@@ -193,7 +215,9 @@ static int dropFileEventFilter(void *userdata, SDL_Event *event)
 				vc.gameList = [[NSMutableArray alloc] initWithArray:games copyItems:YES];
 				[vc.tableView reloadData];
 
+#if !SDL_VERSION_ATLEAST(3, 0, 0)
 				SDL_free(event->drop.file);
+#endif
 				return 0;
 			}
 		}
@@ -331,64 +355,13 @@ std::string getLoveInResources(bool &fused)
 		// The string length might be 0 if the no-game screen was selected.
 		if (selectedfile != nil && selectedfile.length > 0)
 		{
-			NSString *documents = getDocumentsDirectory();
+			std::string docdir = getUserDirectory(USER_DIRECTORY_DOCUMENTS);
+			NSString *documents = @(docdir.c_str());
 			path = [documents stringByAppendingPathComponent:selectedfile].UTF8String;
 		}
 	}
 
 	return path;
-}
-
-std::string getAppdataDirectory()
-{
-	NSSearchPathDirectory searchdir = NSApplicationSupportDirectory;
-	std::string path;
-
-	@autoreleasepool
-	{
-		NSArray *dirs = NSSearchPathForDirectoriesInDomains(searchdir, NSUserDomainMask, YES);
-
-		if (dirs.count > 0)
-			path = [dirs[0] UTF8String];
-	}
-
-	return path;
-}
-
-std::string getHomeDirectory()
-{
-	std::string path;
-
-	@autoreleasepool
-	{
-		path = [NSHomeDirectory() UTF8String];
-	}
-
-	return path;
-}
-
-bool openURL(const std::string &url)
-{
-	bool success = false;
-
-	@autoreleasepool
-	{
-		UIApplication *app = [UIApplication sharedApplication];
-		NSURL *nsurl = [NSURL URLWithString:@(url.c_str())];
-
-		if ([app canOpenURL:nsurl])
-			success = [app openURL:nsurl];
-	}
-
-	return success;
-}
-
-std::string getExecutablePath()
-{
-	@autoreleasepool
-	{
-		return std::string([NSBundle mainBundle].executablePath.UTF8String);
-	}
 }
 
 void vibrate()
@@ -467,11 +440,19 @@ Rect getSafeArea(SDL_Window *window)
 		Rect rect = {};
 		SDL_GetWindowSize(window, &rect.w, &rect.h);
 
+#if SDL_VERSION_ATLEAST(3, 0, 0)
+		SDL_PropertiesID props = SDL_GetWindowProperties(window);
+		UIWindow *window = (__bridge UIWindow *) SDL_GetPointerProperty(props, SDL_PROP_WINDOW_UIKIT_WINDOW_POINTER, nullptr);
+		if (window != nil)
+		{
+			UIView *view = window.rootViewController.view;
+#else
 		SDL_SysWMinfo info = {};
 		SDL_VERSION(&info.version);
 		if (SDL_GetWindowWMInfo(window, &info))
 		{
 			UIView *view = info.info.uikit.window.rootViewController.view;
+#endif
 			if (@available(iOS 11.0, tvOS 11.0, *))
 			{
 				UIEdgeInsets insets = view.safeAreaInsets;

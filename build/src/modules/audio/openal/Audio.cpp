@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -93,13 +93,29 @@ ALenum Audio::getFormat(int bitDepth, int channels)
 	return AL_NONE;
 }
 
+static const char *getDeviceSpecifier(ALCdevice *device)
+{
+#ifndef ALC_ALL_DEVICES_SPECIFIER
+	constexpr ALCenum ALC_ALL_DEVICES_SPECIFIER = 0x1013;
+#endif
+	static ALCenum deviceEnum = alcIsExtensionPresent(nullptr, "ALC_ENUMERATE_ALL_EXT") == ALC_TRUE
+		? ALC_ALL_DEVICES_SPECIFIER
+		: ALC_DEVICE_SPECIFIER;
+
+	return alcGetString(device, deviceEnum);
+}
+
 Audio::Audio()
-	: device(nullptr)
+	: love::audio::Audio("love.audio.openal")
+	, device(nullptr)
 	, context(nullptr)
 	, pool(nullptr)
 	, poolThread(nullptr)
 	, distanceModel(DISTANCE_INVERSE_CLAMPED)
 {
+	attribs.push_back(0);
+	attribs.push_back(0);
+
 	// Before opening new device, check if recording
 	// is requested.
 	if (getRequestRecordingPermission())
@@ -122,18 +138,17 @@ Audio::Audio()
 			throw love::Exception("Could not open device.");
 
 #ifdef ALC_EXT_EFX
-		ALint attribs[4] = { ALC_MAX_AUXILIARY_SENDS, MAX_SOURCE_EFFECTS, 0, 0 };
-#else
-		ALint *attribs = nullptr;
+		attribs.insert(attribs.begin(), ALC_MAX_AUXILIARY_SENDS);
+		attribs.insert(attribs.begin() + 1, MAX_SOURCE_EFFECTS);
 #endif
 
-		context = alcCreateContext(device, attribs);
+		context = alcCreateContext(device, attribs.data());
 
 		if (context == nullptr)
-			throw love::Exception("Could not create context.");
+			throw love::Exception("Could not create context: %s", alcGetString(device, alcGetError(device)));
 
-		if (!alcMakeContextCurrent(context) || alcGetError(device) != ALC_NO_ERROR)
-			throw love::Exception("Could not make context current.");
+		if (!alcMakeContextCurrent(context))
+			throw love::Exception("Could not make context current: %s", alcGetString(device, alcGetError(device)));
 	}
 
 #ifdef ALC_EXT_EFX
@@ -165,7 +180,7 @@ Audio::Audio()
 
 	try
 	{
-		pool = new Pool();
+		pool = new Pool(device);
 	}
 	catch (love::Exception &)
 	{
@@ -240,11 +255,6 @@ Audio::~Audio()
 	alcMakeContextCurrent(nullptr);
 	alcDestroyContext(context);
 	alcCloseDevice(device);
-}
-
-const char *Audio::getName() const
-{
-	return "love.audio.openal";
 }
 
 love::audio::Source *Audio::newSource(love::sound::Decoder *decoder)
@@ -350,6 +360,52 @@ void Audio::resumeContext()
 	if (context && alcGetCurrentContext() != context)
 		alcMakeContextCurrent(context);
 #endif
+}
+
+std::string Audio::getPlaybackDevice()
+{
+	const char *dev = getDeviceSpecifier(device);
+
+	if (dev == nullptr)
+		throw Exception("Failed to get current device: %s", alcGetString(device, alcGetError(device)));
+
+	return dev;
+}
+
+void Audio::getPlaybackDevices(std::vector<std::string> &list)
+{
+	const char *devices = getDeviceSpecifier(nullptr);
+
+	if (devices == nullptr)
+		throw Exception("Failed to enumerate devices: %s", alcGetString(nullptr, alcGetError(nullptr)));
+
+	for (const char *device = devices; *device; device++)
+	{
+		list.emplace_back(device);
+		device += list.back().length();
+	}
+}
+
+void Audio::setPlaybackDevice(const char* name)
+{
+#ifndef ALC_SOFT_reopen_device
+	typedef ALCboolean (ALC_APIENTRY*LPALCREOPENDEVICESOFT)(ALCdevice *device,
+		const ALCchar *deviceName, const ALCint *attribs);
+#endif
+	static LPALCREOPENDEVICESOFT alcReopenDeviceSOFT = alcIsExtensionPresent(device, "ALC_SOFT_reopen_device") == ALC_TRUE
+		? (LPALCREOPENDEVICESOFT) alcGetProcAddress(device, "alcReopenDeviceSOFT")
+		: nullptr;
+
+	if (alcReopenDeviceSOFT == nullptr)
+	{
+		// Default implementation throws exception. To make
+		// error message consistent, call the base class.
+		love::audio::Audio::setPlaybackDevice(name);
+		return;
+	}
+
+	if (alcReopenDeviceSOFT(device, (const ALCchar *) name, attribs.data()) == ALC_FALSE)
+		throw love::Exception("Cannot set output device: %s", alcGetString(device, alcGetError(device)));
 }
 
 void Audio::setVolume(float volume)

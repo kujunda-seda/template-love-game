@@ -3,7 +3,7 @@ R"luastring"--(
 -- There is a matching delimiter at the bottom of the file.
 
 --[[
-Copyright (c) 2006-2023 LOVE Development Team
+Copyright (c) 2006-2024 LOVE Development Team
 
 This software is provided 'as-is', without any express or implied
 warranty.  In no event will the authors be held liable for any damages
@@ -66,20 +66,9 @@ end
 
 -- Converts any path into a full path.
 function love.path.getFull(p)
-
-	if love.path.abs(p) then
-		return love.path.normalslashes(p)
-	end
-
-	local cwd = love.filesystem.getWorkingDirectory()
-	cwd = love.path.normalslashes(cwd)
-	cwd = love.path.endslash(cwd)
-
-	-- Construct a full path.
-	local full = cwd .. love.path.normalslashes(p)
-
-	-- Remove trailing /., if applicable
-	return full:match("(.-)/%.$") or full
+	p = love.filesystem.canonicalizeRealPath(p)
+	p = love.path.normalslashes(p)
+	return p
 end
 
 -- Returns the leaf of a full path.
@@ -114,8 +103,10 @@ end
 
 love.arg.options = {
 	console = { a = 0 },
-	fused = {a = 0 },
-	game = { a = 1 }
+	fused = { a = 0 },
+	game = { a = 1 },
+	renderers = { a = 1 },
+	excluderenderers = { a = 1 },
 }
 
 love.arg.optionIndices = {}
@@ -134,7 +125,7 @@ function love.arg.parseOption(m, i)
 	return m.a
 end
 
-function love.arg.parseOptions()
+function love.arg.parseOptions(arg)
 
 	local game
 	local argc = #arg

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -37,7 +37,7 @@ namespace lullaby
 /**
  * The love.sound.lullaby module is the custom sound decoder module for LOVE. Instead
  * of using an intermediate library like SDL_sound, it interfaces with relevant libraries
- * directly (libmpg123, libmodplug, libFLAC, etc).
+ * directly (libvorbis, dr_mp3, dr_flac, etc).
  *
  * It was Mike that came up with the name Lullaby, which we both instantly recognized as awesome.
  **/
@@ -45,21 +45,11 @@ class Sound : public love::sound::Sound
 {
 public:
 
-	/**
-	 * Constructor. Initializes relevant libraries.
-	 **/
 	Sound();
-
-	/**
-	 * Destructor. Deinitializes relevant libraries.
-	 **/
 	virtual ~Sound();
 
-	/// @copydoc love::Module::getName
-	const char *getName() const;
-
 	/// @copydoc love::sound::Sound::newDecoder
-	sound::Decoder *newDecoder(love::filesystem::FileData *file, int bufferSize);
+	sound::Decoder *newDecoder(Stream *stream, int bufferSize) override;
 
 }; // Sound
 

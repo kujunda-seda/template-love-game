@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -41,27 +41,6 @@ namespace ios
  * searched first, and then the app's Documents folder.
  **/
 std::string getLoveInResources(bool &fused);
-
-/**
- * Gets the directory path where files should be stored.
- **/
-std::string getAppdataDirectory();
-
-/**
- * Get the home directory (on iOS, this really means the app's sandbox dir.)
- **/
-std::string getHomeDirectory();
-
-/**
- * Opens the specified URL with the default program associated with the URL's
- * scheme.
- **/
-bool openURL(const std::string &url);
-
-/**
- * Returns the full path to the executable.
- **/
-std::string getExecutablePath();
 
 /**
  * Causes devices with vibration support to vibrate for about 0.5 seconds.

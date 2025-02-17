@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -83,10 +83,14 @@ float linearToGamma(float c);
  *
  * @return Noise value in the range of [0, 1].
  **/
-static float noise1(float x);
-static float noise2(float x, float y);
-static float noise3(float x, float y, float z);
-static float noise4(float x, float y, float z, float w);
+static double simplexNoise1(double x);
+static double simplexNoise2(double x, double y);
+static double simplexNoise3(double x, double y, double z);
+static double simplexNoise4(double x, double y, double z, double w);
+static double perlinNoise1(double x);
+static double perlinNoise2(double x, double y);
+static double perlinNoise3(double x, double y, double z);
+static double perlinNoise4(double x, double y, double z, double w);
 
 
 class Math : public Module
@@ -98,7 +102,7 @@ public:
 
 	RandomGenerator *getRandomGenerator()
 	{
-		return &rng;
+		return rng.get();
 	}
 
 	/**
@@ -114,45 +118,53 @@ public:
 	Transform *newTransform();
 	Transform *newTransform(float x, float y, float a, float sx, float sy, float ox, float oy, float kx, float ky);
 
-	// Implements Module.
-	virtual ModuleType getModuleType() const
-	{
-		return M_MATH;
-	}
-
-	virtual const char *getName() const
-	{
-		return "love.math";
-	}
-
 private:
 
-	RandomGenerator rng;
+	// All love objects accessible in Lua should be heap-allocated,
+	// to guarantee a minimum pointer alignment.
+	StrongRef<RandomGenerator> rng;
 
 }; // Math
 
 
-static inline float noise1(float x)
+static inline double simplexNoise1(double x)
 {
-	return SimplexNoise1234::noise(x) * 0.5f + 0.5f;
+	return SimplexNoise1234::noise(x) * 0.5 + 0.5;
 }
 
-static inline float noise2(float x, float y)
+static inline double simplexNoise2(double x, double y)
 {
-	return SimplexNoise1234::noise(x, y) * 0.5f + 0.5f;
+	return SimplexNoise1234::noise(x, y) * 0.5 + 0.5;
 }
 
-// Perlin noise is used instead of Simplex noise in the 3D and 4D cases to avoid
-// patent issues.
-
-static inline float noise3(float x, float y, float z)
+static inline double simplexNoise3(double x, double y, double z)
 {
-	return Noise1234::noise(x, y, z) * 0.5f + 0.5f;
+	return SimplexNoise1234::noise(x, y, z) * 0.5 + 0.5;
 }
 
-static inline float noise4(float x, float y, float z, float w)
+static inline double simplexNoise4(double x, double y, double z, double w)
 {
-	return Noise1234::noise(x, y, z, w) * 0.5f + 0.5f;
+	return SimplexNoise1234::noise(x, y, z, w) * 0.5 + 0.5;
+}
+
+static inline double perlinNoise1(double x)
+{
+	return Noise1234::noise(x) * 0.5 + 0.5;
+}
+
+static inline double perlinNoise2(double x, double y)
+{
+	return Noise1234::noise(x, y) * 0.5 + 0.5;
+}
+
+static inline double perlinNoise3(double x, double y, double z)
+{
+	return Noise1234::noise(x, y, z) * 0.5 + 0.5;
+}
+
+static inline double perlinNoise4(double x, double y, double z, double w)
+{
+	return Noise1234::noise(x, y, z, w) * 0.5 + 0.5;
 }
 
 } // math

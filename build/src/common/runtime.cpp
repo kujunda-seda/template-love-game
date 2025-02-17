@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -35,13 +35,6 @@
 #include <cstddef>
 #include <cmath>
 #include <sstream>
-
-// VS2013 doesn't support alignof
-#if defined(_MSC_VER) && _MSC_VER <= 1800
-#define LOVE_ALIGNOF(x) __alignof(x)
-#else
-#define LOVE_ALIGNOF(x) alignof(x)
-#endif
 
 namespace love
 {
@@ -106,6 +99,10 @@ static bool luax_isfulllightuserdatasupported(lua_State *L)
 	static bool checked = false;
 	static bool supported = false;
 
+	if (sizeof(void*) == 4)
+		// 32-bit platforms always supports full-lightuserdata.
+		return true;
+
 	if (!checked)
 	{
 		lua_pushcclosure(L, [](lua_State *L) -> int
@@ -136,17 +133,12 @@ static ObjectKey luax_computeloveobjectkey(lua_State *L, love::Object *object)
 	// can store all possible integers up to 2^53. We can store pointers that
 	// use more than 53 bits if their alignment is guaranteed to be more than 1.
 	// For example an alignment requirement of 8 means we can shift the
-	// pointer's bits by 3.
-#if UINTPTR_MAX == 0xffffffff
-	// https://github.com/love2d/love/issues/1916
-	// This appears to be ABI violation on 32-bit platforms. However it seems
-	// there's no reliable way to get the correct alignment pre-C++17. Consider
-	// that 32-bit still fits in 2^53 range, it's perfectly fine to assume
-	// alignment of 1.
-	const size_t minalign = 1;
-#else
-	const size_t minalign = LOVE_ALIGNOF(std::max_align_t);
-#endif
+	// pointer's bits by 3. However, this is not always reliable on 32-bit platforms
+	// as can be seen in this bug report: https://github.com/love2d/love/issues/1916.
+	// It appears to be ABI violation. However it seems there's no reliable way to
+	// get the correct alignment pre-C++17. Consider that 32-bit pointer still fits
+	// in 2^53 range, it's perfectly fine to assume alignment of 1 there.
+	const size_t minalign = sizeof(void*) == 8 ? alignof(std::max_align_t) : 1;
 	uintptr_t key = (uintptr_t) object;
 
 	if ((key & (minalign - 1)) != 0)
@@ -350,6 +342,23 @@ double luax_numberflag(lua_State *L, int table_index, const char *key, double de
 	return retval;
 }
 
+bool luax_checkboolflag(lua_State *L, int table_index, const char *key)
+{
+	lua_getfield(L, table_index, key);
+
+	bool retval = false;
+	if (lua_type(L, -1) != LUA_TBOOLEAN)
+	{
+		std::string err = "expected boolean field '" + std::string(key) + "' in table";
+		return luaL_argerror(L, table_index, err.c_str());
+	}
+	else
+		retval = luax_toboolean(L, -1);
+	lua_pop(L, 1);
+
+	return retval;
+}
+
 int luax_checkintflag(lua_State *L, int table_index, const char *key)
 {
 	lua_getfield(L, table_index, key);
@@ -357,7 +366,7 @@ int luax_checkintflag(lua_State *L, int table_index, const char *key)
 	int retval;
 	if (!lua_isnumber(L, -1))
 	{
-		std::string err = "expected integer field " + std::string(key) + " in table";
+		std::string err = "expected integer field '" + std::string(key) + "' in table";
 		return luaL_argerror(L, table_index, err.c_str());
 	}
 	else
@@ -464,9 +473,6 @@ int luax_register_module(lua_State *L, const WrappedModule &m)
 	lua_setfield(L, -3, m.name); // love.graphics = table
 	lua_remove(L, -2); // love
 
-	// Register module instance
-	Module::registerInstance(m.module);
-
 	return 1;
 }
 
@@ -540,6 +546,10 @@ int luax_register_type(lua_State *L, love::Type *type, ...)
 	// Add release
 	lua_pushcfunction(L, w__release);
 	lua_setfield(L, -2, "release");
+
+	// Add __close for lua 5.4 (just calls release)
+	lua_pushcfunction(L, w__release);
+	lua_setfield(L, -2, "__close");
 
 	va_list fs;
 	va_start(fs, type);
@@ -692,6 +702,160 @@ bool luax_istype(lua_State *L, int idx, love::Type &type)
 		return p->type->isa(type);
 	else
 		return false;
+}
+
+static Proxy *tryextractproxy(lua_State *L, int idx)
+{
+	Proxy *u = (Proxy *)lua_touserdata(L, idx);
+
+	if (u == nullptr || u->type == nullptr)
+		return nullptr;
+
+	// We could get rid of the dynamic_cast for more performance, but it would
+	// be less safe...
+	if (dynamic_cast<Object *>(u->object) != nullptr)
+		return u;
+
+	return nullptr;
+}
+
+Variant luax_checkvariant(lua_State *L, int n, bool allowuserdata, std::set<const void*> *tableSet)
+{
+	size_t len;
+	const char *str;
+	Proxy *p = nullptr;
+
+	if (n < 0) // Fix the stack position, we might modify it later
+		n += lua_gettop(L) + 1;
+
+	switch (lua_type(L, n))
+	{
+	case LUA_TBOOLEAN:
+		return Variant(luax_toboolean(L, n));
+	case LUA_TNUMBER:
+		return Variant(lua_tonumber(L, n));
+	case LUA_TSTRING:
+		str = lua_tolstring(L, n, &len);
+		return Variant(str, len);
+	case LUA_TLIGHTUSERDATA:
+		return Variant(lua_touserdata(L, n));
+	case LUA_TUSERDATA:
+		if (!allowuserdata)
+		{
+			luax_typerror(L, n, "copyable Lua value");
+			return Variant();
+		}
+		p = tryextractproxy(L, n);
+		if (p != nullptr)
+			return Variant(p->type, p->object);
+		else
+		{
+			luax_typerror(L, n, "love type");
+			return Variant();
+		}
+	case LUA_TNIL:
+		return Variant();
+	case LUA_TTABLE:
+		{
+			bool success = true;
+			std::set<const void *> topTableSet;
+
+			// We can use a pointer to a stack-allocated variable because it's
+			// never used after the stack-allocated variable is destroyed.
+			if (tableSet == nullptr)
+				tableSet = &topTableSet;
+
+			// Now make sure this table wasn't already serialised
+			const void *tablePointer = lua_topointer(L, n);
+			{
+				auto result = tableSet->insert(tablePointer);
+				if (!result.second) // insertion failed
+					throw love::Exception("Cycle detected in table");
+			}
+
+			Variant::SharedTable *table = new Variant::SharedTable();
+
+			size_t len = luax_objlen(L, -1);
+			if (len > 0)
+				table->pairs.reserve(len);
+
+			lua_pushnil(L);
+
+			while (lua_next(L, n))
+			{
+				table->pairs.emplace_back(
+					luax_checkvariant(L, -2, allowuserdata, tableSet),
+					luax_checkvariant(L, -1, allowuserdata, tableSet)
+				);
+				lua_pop(L, 1);
+
+				const auto &p = table->pairs.back();
+				if (p.first.getType() == Variant::UNKNOWN || p.second.getType() == Variant::UNKNOWN)
+				{
+					success = false;
+					break;
+				}
+			}
+
+			// And remove the table from the set again
+			tableSet->erase(tablePointer);
+
+			if (success)
+				return Variant(table);
+			else
+				table->release();
+		}
+		break;
+	}
+
+	return Variant::unknown();
+}
+
+void luax_pushvariant(lua_State *L, const Variant &v)
+{
+	const Variant::Data &data = v.getData();
+	switch (v.getType())
+	{
+	case Variant::BOOLEAN:
+		lua_pushboolean(L, data.boolean);
+		break;
+	case Variant::NUMBER:
+		lua_pushnumber(L, data.number);
+		break;
+	case Variant::STRING:
+		lua_pushlstring(L, data.string->str, data.string->len);
+		break;
+	case Variant::SMALLSTRING:
+		lua_pushlstring(L, data.smallstring.str, data.smallstring.len);
+		break;
+	case Variant::LUSERDATA:
+		lua_pushlightuserdata(L, data.userdata);
+		break;
+	case Variant::LOVEOBJECT:
+		luax_pushtype(L, *data.objectproxy.type, data.objectproxy.object);
+		break;
+	case Variant::TABLE:
+	{
+		std::vector<std::pair<Variant, Variant>> &table = data.table->pairs;
+		int tsize = (int) table.size();
+
+		lua_createtable(L, 0, tsize);
+
+		for (int i = 0; i < tsize; ++i)
+		{
+			std::pair<Variant, Variant> &kv = table[i];
+			luax_pushvariant(L, kv.first);
+			luax_pushvariant(L, kv.second);
+			lua_settable(L, -3);
+		}
+
+		break;
+	}
+	case Variant::NIL:
+	default:
+		lua_pushnil(L);
+		break;
+	}
 }
 
 int luax_getfunction(lua_State *L, const char *mod, const char *fn)
@@ -900,18 +1064,18 @@ lua_State *luax_getpinnedthread(lua_State *L)
 	return thread;
 }
 
-void luax_markdeprecated(lua_State *L, const char *name, APIType api)
+void luax_markdeprecated(lua_State *L, int level, const char *name, APIType api)
 {
-	luax_markdeprecated(L, name, api, DEPRECATED_NO_REPLACEMENT, nullptr);
+	luax_markdeprecated(L, level, name, api, DEPRECATED_NO_REPLACEMENT, nullptr);
 }
 
-void luax_markdeprecated(lua_State *L, const char *name, APIType api, DeprecationType type, const char *replacement)
+void luax_markdeprecated(lua_State *L, int level, const char *name, APIType api, DeprecationType type, const char *replacement)
 {
 	MarkDeprecated deprecated(name, api, type, replacement);
 
 	if (deprecated.info != nullptr && deprecated.info->uses == 1)
 	{
-		luaL_where(L, 1);
+		luaL_where(L, level);
 		const char *where = lua_tostring(L, -1);
 		if (where != nullptr)
 			deprecated.info->where = where;

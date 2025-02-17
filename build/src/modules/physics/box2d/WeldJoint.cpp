@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -66,24 +66,24 @@ void WeldJoint::init(b2WeldJointDef &def, Body *body1, Body *body2, float xA, fl
 	def.collideConnected = collideConnected;
 }
 
-void WeldJoint::setFrequency(float hz)
+void WeldJoint::setStiffness(float k)
 {
-	joint->SetFrequency(hz);
+	joint->SetStiffness(k);
 }
 
-float WeldJoint::getFrequency() const
+float WeldJoint::getStiffness() const
 {
-	return joint->GetFrequency();
+	return joint->GetStiffness();
 }
 
-void WeldJoint::setDampingRatio(float d)
+void WeldJoint::setDamping(float d)
 {
-	joint->SetDampingRatio(d);
+	joint->SetDamping(d);
 }
 
-float WeldJoint::getDampingRatio() const
+float WeldJoint::getDamping() const
 {
-	return joint->GetDampingRatio();
+	return joint->GetDamping();
 }
 
 float WeldJoint::getReferenceAngle() const

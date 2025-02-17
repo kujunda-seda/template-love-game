@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -53,6 +53,11 @@ int Rasterizer::getAscent() const
 int Rasterizer::getDescent() const
 {
 	return metrics.descent;
+}
+
+GlyphData *Rasterizer::getGlyphData(uint32 glyph) const
+{
+	return getGlyphDataForIndex(getGlyphIndex(glyph));
 }
 
 GlyphData *Rasterizer::getGlyphData(const std::string &text) const

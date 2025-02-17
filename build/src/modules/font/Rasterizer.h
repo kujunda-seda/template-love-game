@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -30,6 +30,8 @@ namespace love
 {
 namespace font
 {
+
+class TextShaper;
 
 /**
  * Holds the specific font metrics.
@@ -85,16 +87,31 @@ public:
 	virtual int getLineHeight() const = 0;
 
 	/**
+	 * Gets the spacing of the given unicode glyph.
+	 **/
+	virtual int getGlyphSpacing(uint32 glyph) const = 0;
+
+	/**
+	 * Gets a rasterizer-specific index associated with the given glyph.
+	 **/
+	virtual int getGlyphIndex(uint32 glyph) const = 0;
+
+	/**
 	 * Gets a specific glyph.
 	 * @param glyph The (UNICODE) glyph codepoint to get data for.
 	 **/
-	virtual GlyphData *getGlyphData(uint32 glyph) const = 0;
+	GlyphData *getGlyphData(uint32 glyph) const;
 
 	/**
 	 * Gets a specific glyph.
 	 * @param text The (UNICODE) glyph character to get the data for.
 	 **/
-	virtual GlyphData *getGlyphData(const std::string &text) const;
+	GlyphData *getGlyphData(const std::string &text) const;
+
+	/**
+	 * Gets a specific glyph for the given rasterizer glyph index.
+	 **/
+	virtual GlyphData *getGlyphDataForIndex(int index) const = 0;
 
 	/**
 	 * Gets the number of glyphs the rasterizer has data for.
@@ -120,12 +137,17 @@ public:
 
 	virtual DataType getDataType() const = 0;
 
+	virtual ptrdiff_t getHandle() const { return 0; }
+
+	virtual TextShaper *newTextShaper() = 0;
+
 	float getDPIScale() const;
 
 protected:
 
 	FontMetrics metrics;
 	float dpiScale;
+	bool sdf;
 
 }; // Rasterizer
 

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -45,7 +45,7 @@ public:
 	 * Create a new ChainShape from a Box2D chain shape.
 	 * @param c The chain shape.
 	 **/
-	ChainShape(b2ChainShape *c, bool own = true);
+	ChainShape(Body *body, const b2ChainShape &c);
 
 	virtual ~ChainShape();
 
@@ -56,7 +56,6 @@ public:
 	 * @param y The y-coordinate of the vertex.
 	 **/
 	void setNextVertex(float x, float y);
-	void setNextVertex();
 
 	/**
 	 * Establish connectivity to a vertex that precedes
@@ -65,17 +64,16 @@ public:
 	 * @param y The y-coordinate of the vertex.
 	 **/
 	void setPreviousVertex(float x, float y);
-	void setPreviousVertex();
 
 	/**
 	 * Gets the vertex that follows the last vertex.
 	 **/
-	bool getNextVertex(float &x, float &y) const;
+	b2Vec2 getNextVertex() const;
 
 	/**
 	 * Gets the vertex that precedes the first vertex.
 	 **/
-	bool getPreviousVertex(float &x, float &y) const;
+	b2Vec2 getPreviousVertex() const;
 
 	/**
 	 * Returns a child EdgeShape.

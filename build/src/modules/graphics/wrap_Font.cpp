@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -30,9 +30,9 @@ namespace love
 namespace graphics
 {
 
-void luax_checkcoloredstring(lua_State *L, int idx, std::vector<Font::ColoredString> &strings)
+void luax_checkcoloredstring(lua_State *L, int idx, std::vector<love::font::ColoredString> &strings)
 {
-	Font::ColoredString coloredstr;
+	love::font::ColoredString coloredstr;
 	coloredstr.color = Colorf(1.0f, 1.0f, 1.0f, 1.0f);
 
 	if (lua_istable(L, idx))
@@ -57,7 +57,9 @@ void luax_checkcoloredstring(lua_State *L, int idx, std::vector<Font::ColoredStr
 			}
 			else
 			{
-				coloredstr.str = luaL_checkstring(L, -1);
+				size_t strl = 0;
+				const char *str = luaL_checklstring(L, -1, &strl);
+				coloredstr.str.assign(str, strl);
 				strings.push_back(coloredstr);
 			}
 
@@ -66,7 +68,9 @@ void luax_checkcoloredstring(lua_State *L, int idx, std::vector<Font::ColoredStr
 	}
 	else
 	{
-		coloredstr.str = luaL_checkstring(L, idx);
+		size_t strl = 0;
+		const char *str = luaL_checklstring(L, idx, &strl);
+		coloredstr.str.assign(str, strl);
 		strings.push_back(coloredstr);
 	}
 }
@@ -86,8 +90,16 @@ int w_Font_getHeight(lua_State *L)
 int w_Font_getWidth(lua_State *L)
 {
 	Font *t = luax_checkfont(L, 1);
-	const char *str = luaL_checkstring(L, 2);
-	luax_catchexcept(L, [&](){ lua_pushinteger(L, t->getWidth(str)); });
+	if (lua_type(L, 2) == LUA_TSTRING)
+	{
+		const char *str = luaL_checkstring(L, 2);
+		luax_catchexcept(L, [&](){ lua_pushinteger(L, t->getWidth(str)); });
+	}
+	else
+	{
+		uint32 glyph = (uint32) luaL_checknumber(L, 2);
+		luax_catchexcept(L, [&](){ lua_pushinteger(L, t->getWidth(glyph)); });
+	}
 	return 1;
 }
 
@@ -95,20 +107,20 @@ int w_Font_getWrap(lua_State *L)
 {
 	Font *t = luax_checkfont(L, 1);
 
-	std::vector<Font::ColoredString> text;
+	std::vector<love::font::ColoredString> text;
 	luax_checkcoloredstring(L, 2, text);
 
 	float wrap = (float) luaL_checknumber(L, 3);
-	int max_width = 0;
+	float max_width = 0;
 	std::vector<std::string> lines;
-	std::vector<int> widths;
+	std::vector<float> widths;
 
 	luax_catchexcept(L, [&]() { t->getWrap(text, wrap, lines, &widths); });
 
-	for (int width : widths)
+	for (float width : widths)
 		max_width = std::max(max_width, width);
 
-	lua_pushinteger(L, max_width);
+	lua_pushnumber(L, max_width);
 	lua_createtable(L, (int) lines.size(), 0);
 
 	for (int i = 0; i < (int) lines.size(); i++)
@@ -138,33 +150,33 @@ int w_Font_getLineHeight(lua_State *L)
 int w_Font_setFilter(lua_State *L)
 {
 	Font *t = luax_checkfont(L, 1);
-	Texture::Filter f = t->getFilter();
+	SamplerState s = t->getSamplerState();
 
 	const char *minstr = luaL_checkstring(L, 2);
 	const char *magstr = luaL_optstring(L, 3, minstr);
 
-	if (!Texture::getConstant(minstr, f.min))
-		return luax_enumerror(L, "filter mode", Texture::getConstants(f.min), minstr);
-	if (!Texture::getConstant(magstr, f.mag))
-		return luax_enumerror(L, "filter mode", Texture::getConstants(f.mag), magstr);
+	if (!SamplerState::getConstant(minstr, s.minFilter))
+		return luax_enumerror(L, "filter mode", SamplerState::getConstants(s.minFilter), minstr);
+	if (!SamplerState::getConstant(magstr, s.magFilter))
+		return luax_enumerror(L, "filter mode", SamplerState::getConstants(s.magFilter), magstr);
 
-	f.anisotropy = (float) luaL_optnumber(L, 4, 1.0);
+	s.maxAnisotropy = std::min(std::max(1, (int) luaL_optnumber(L, 4, 1.0)), LOVE_UINT8_MAX);
 
-	luax_catchexcept(L, [&](){ t->setFilter(f); });
+	luax_catchexcept(L, [&](){ t->setSamplerState(s); });
 	return 0;
 }
 
 int w_Font_getFilter(lua_State *L)
 {
 	Font *t = luax_checkfont(L, 1);
-	const Texture::Filter f = t->getFilter();
+	const SamplerState &s = t->getSamplerState();
 	const char *minstr;
 	const char *magstr;
-	Texture::getConstant(f.min, minstr);
-	Texture::getConstant(f.mag, magstr);
+	SamplerState::getConstant(s.minFilter, minstr);
+	SamplerState::getConstant(s.magFilter, magstr);
 	lua_pushstring(L, minstr);
 	lua_pushstring(L, magstr);
-	lua_pushnumber(L, f.anisotropy);
+	lua_pushnumber(L, s.maxAnisotropy);
 	return 3;
 }
 

@@ -3,6 +3,7 @@
 // Copyright (C) 2013 LunarG, Inc.
 // Copyright (C) 2017 ARM Limited.
 // Copyright (C) 2015-2018 Google, Inc.
+// Copyright (c) 2023, Mobica Limited
 //
 // All rights reserved.
 //
@@ -142,6 +143,7 @@ int TPpContext::lFloatConst(int len, int ch, TPpToken* ppToken)
         ch = getChar();
         int firstDecimal = len;
 
+#ifdef ENABLE_HLSL
         // 1.#INF or -1.#INF
         if (ch == '#' && (ifdepth > 0 || parseContext.intermediate.getSource() == EShSourceHlsl)) {
             if ((len <  2) ||
@@ -169,6 +171,7 @@ int TPpContext::lFloatConst(int len, int ch, TPpToken* ppToken)
                 }
             }
         }
+#endif
 
         // Consume leading-zero digits after the decimal point
         while (ch == '0') {
@@ -217,7 +220,9 @@ int TPpContext::lFloatConst(int len, int ch, TPpToken* ppToken)
             }
             if (ch >= '0' && ch <= '9') {
                 while (ch >= '0' && ch <= '9') {
-                    exponent = exponent * 10 + (ch - '0');
+                    if (exponent < 500) {
+                        exponent = exponent * 10 + (ch - '0');
+                    }
                     saveName(ch);
                     ch = getChar();
                 }
@@ -295,7 +300,8 @@ int TPpContext::lFloatConst(int len, int ch, TPpToken* ppToken)
             saveName(ch);
             isFloat16 = true;
         }
-    } else if (ch == 'f' || ch == 'F') {
+    } else
+    if (ch == 'f' || ch == 'F') {
         if (ifdepth == 0)
             parseContext.profileRequires(ppToken->loc,  EEsProfile, 300, nullptr, "floating-point suffix");
         if (ifdepth == 0 && !parseContext.relaxedErrors())
@@ -468,16 +474,12 @@ int TPpContext::tStringInput::scan(TPpToken* ppToken)
     static const int Num_Int64_Extensions = sizeof(Int64_Extensions) / sizeof(Int64_Extensions[0]);
 
     static const char* const Int16_Extensions[] = {
-#ifdef AMD_EXTENSIONS
         E_GL_AMD_gpu_shader_int16,
-#endif
         E_GL_EXT_shader_explicit_arithmetic_types,
         E_GL_EXT_shader_explicit_arithmetic_types_int16 };
     static const int Num_Int16_Extensions = sizeof(Int16_Extensions) / sizeof(Int16_Extensions[0]);
 
-    ppToken->ival = 0;
-    ppToken->i64val = 0;
-    ppToken->space = false;
+    ppToken->clear();
     ch = getch();
     for (;;) {
         while (ch == ' ' || ch == '\t') {
@@ -546,7 +548,7 @@ int TPpContext::tStringInput::scan(TPpToken* ppToken)
 
                     ival = 0;
                     do {
-                        if (len < MaxTokenLength && ival <= 0x0fffffffffffffffull) {
+                        if (len < MaxTokenLength && ival <= 0x7fffffffffffffffull) {
                             ppToken->name[len++] = (char)ch;
                             if (ch >= '0' && ch <= '9') {
                                 ii = ch - '0';
@@ -587,7 +589,6 @@ int TPpContext::tStringInput::scan(TPpToken* ppToken)
                     } else
                         ungetch();
 
-#ifdef AMD_EXTENSIONS
                     nextCh = getch();
                     if ((nextCh == 's' || nextCh == 'S') &&
                             pp->parseContext.intermediate.getSource() == EShSourceGlsl) {
@@ -596,18 +597,15 @@ int TPpContext::tStringInput::scan(TPpToken* ppToken)
                         isInt16 = true;
                     } else
                         ungetch();
-#endif
                 } else if (ch == 'l' || ch == 'L') {
                     if (len < MaxTokenLength)
                         ppToken->name[len++] = (char)ch;
                     isInt64 = true;
-#ifdef AMD_EXTENSIONS
                 } else if ((ch == 's' || ch == 'S') &&
                            pp->parseContext.intermediate.getSource() == EShSourceGlsl) {
                     if (len < MaxTokenLength)
                         ppToken->name[len++] = (char)ch;
                     isInt16 = true;
-#endif
                 } else
                     ungetch();
                 ppToken->name[len] = '\0';
@@ -635,6 +633,108 @@ int TPpContext::tStringInput::scan(TPpToken* ppToken)
                 } else {
                     if (ival > 0xffffffffu && !AlreadyComplained)
                         pp->parseContext.ppError(ppToken->loc, "hexadecimal literal too big", "", "");
+                    ppToken->ival = (int)ival;
+                    return isUnsigned ? PpAtomConstUint : PpAtomConstInt;
+                }
+            } else if ((ch == 'b' || ch == 'B') && pp->parseContext.intermediate.getSource() == EShSourceHlsl) {
+                // must be binary
+                bool isUnsigned = false;
+                bool isInt64 = false;
+                bool isInt16 = false;
+                ppToken->name[len++] = (char)ch;
+                ch = getch();
+
+                // Check value
+                if ((ch == '0' || ch == '1'))
+                {
+                    ival = 0;
+                    do {
+                        if (len < MaxTokenLength && ival <= 0x7fffffffffffffffull) {
+                            ppToken->name[len++] = (char)ch;
+                            if (ch == '0' || ch == '1') {
+                                ii = ch - '0';
+                            } else {
+                                pp->parseContext.ppError(ppToken->loc, "bad digit in binary literal", "", "");
+                            }
+                            ival = (ival << 1) | ii;
+                        }
+                        else
+                        {
+                            if (! AlreadyComplained) {
+                                if(len < MaxTokenLength)
+                                    pp->parseContext.ppError(ppToken->loc, "binary literal too big", "", "");
+                                else
+                                    pp->parseContext.ppError(ppToken->loc, "binary literal too long", "", "");
+                                AlreadyComplained = 1;
+                            }
+                            ival = 0xffffffffffffffffull;
+                        }
+                        ch = getch();
+                    } while (ch == '0' || ch == '1');
+                }
+                else
+                {
+                   pp->parseContext.ppError(ppToken->loc, "bad digit in binary literal", "", "");
+                }
+
+                // check type
+                if (ch == 'u' || ch == 'U') {
+                    if (len < MaxTokenLength)
+                        ppToken->name[len++] = (char)ch;
+                    isUnsigned = true;
+
+                    int nextCh = getch();
+                    if (nextCh == 'l' || nextCh == 'L') {
+                        if (len < MaxTokenLength)
+                            ppToken->name[len++] = (char)nextCh;
+                        isInt64 = true;
+                    } else
+                        ungetch();
+
+                    nextCh = getch();
+                    if ((nextCh == 's' || nextCh == 'S') &&
+                                pp->parseContext.intermediate.getSource() == EShSourceGlsl) {
+                        if (len < MaxTokenLength)
+                            ppToken->name[len++] = (char)nextCh;
+                        isInt16 = true;
+                    } else
+                        ungetch();
+                } else if (ch == 'l' || ch == 'L') {
+                    if (len < MaxTokenLength)
+                        ppToken->name[len++] = (char)ch;
+                    isInt64 = true;
+                } else if ((ch == 's' || ch == 'S') &&
+                                pp->parseContext.intermediate.getSource() == EShSourceGlsl) {
+                    if (len < MaxTokenLength)
+                        ppToken->name[len++] = (char)ch;
+                    isInt16 = true;
+                } else {
+                    ungetch();
+                }
+                ppToken->name[len] = '\0';
+
+                // Assign value
+                if (isInt64 && pp->parseContext.intermediate.getSource() == EShSourceGlsl) {
+                    if (pp->ifdepth == 0) {
+                        pp->parseContext.requireProfile(ppToken->loc, ~EEsProfile,
+                                                        "64-bit binary literal");
+                        pp->parseContext.profileRequires(ppToken->loc, ~EEsProfile, 0,
+                            Num_Int64_Extensions, Int64_Extensions, "64-bit binary literal");
+                    }
+                    ppToken->i64val = ival;
+                    return isUnsigned ? PpAtomConstUint64 : PpAtomConstInt64;
+                } else if (isInt16) {
+                    if (pp->ifdepth == 0) {
+                        if (pp->parseContext.intermediate.getSource() == EShSourceGlsl) {
+                            pp->parseContext.requireProfile(ppToken->loc, ~EEsProfile,
+                                                            "16-bit binary literal");
+                            pp->parseContext.profileRequires(ppToken->loc, ~EEsProfile, 0,
+                                Num_Int16_Extensions, Int16_Extensions, "16-bit binary literal");
+                        }
+                    }
+                    ppToken->ival = (int)ival;
+                    return isUnsigned ? PpAtomConstUint16 : PpAtomConstInt16;
+                } else {
                     ppToken->ival = (int)ival;
                     return isUnsigned ? PpAtomConstUint : PpAtomConstInt;
                 }
@@ -697,7 +797,6 @@ int TPpContext::tStringInput::scan(TPpToken* ppToken)
                     } else
                         ungetch();
 
-#ifdef AMD_EXTENSIONS
                     nextCh = getch();
                     if ((nextCh == 's' || nextCh == 'S') && 
                                 pp->parseContext.intermediate.getSource() == EShSourceGlsl) {
@@ -706,18 +805,15 @@ int TPpContext::tStringInput::scan(TPpToken* ppToken)
                         isInt16 = true;
                     } else
                         ungetch();
-#endif
                 } else if (ch == 'l' || ch == 'L') {
                     if (len < MaxTokenLength)
                         ppToken->name[len++] = (char)ch;
                     isInt64 = true;
-#ifdef AMD_EXTENSIONS
                 } else if ((ch == 's' || ch == 'S') && 
                                 pp->parseContext.intermediate.getSource() == EShSourceGlsl) {
                     if (len < MaxTokenLength)
                         ppToken->name[len++] = (char)ch;
                     isInt16 = true;
-#endif
                 } else
                     ungetch();
                 ppToken->name[len] = '\0';
@@ -788,7 +884,6 @@ int TPpContext::tStringInput::scan(TPpToken* ppToken)
                     } else
                         ungetch();
 
-#ifdef AMD_EXTENSIONS
                     nextCh = getch();
                     if ((nextCh == 's' || nextCh == 'S') &&
                                 pp->parseContext.intermediate.getSource() == EShSourceGlsl) {
@@ -797,18 +892,15 @@ int TPpContext::tStringInput::scan(TPpToken* ppToken)
                         isInt16 = true;
                     } else
                         ungetch();
-#endif
                 } else if (ch == 'l' || ch == 'L') {
                     if (len < MaxTokenLength)
                         ppToken->name[len++] = (char)ch;
                     isInt64 = true;
-#ifdef AMD_EXTENSIONS
                 } else if ((ch == 's' || ch == 'S') &&
                                 pp->parseContext.intermediate.getSource() == EShSourceGlsl) {
                     if (len < MaxTokenLength)
                         ppToken->name[len++] = (char)ch;
                     isInt16 = true;
-#endif
                 } else
                     ungetch();
 
@@ -1027,12 +1119,80 @@ int TPpContext::tStringInput::scan(TPpToken* ppToken)
         case '\'':
             return pp->characterLiteral(ppToken);
         case '"':
-            // TODO: If this gets enhanced to handle escape sequences, or
-            // anything that is different than what #include needs, then
-            // #include needs to use scanHeaderName() for this.
+            // #include uses scanHeaderName() to ignore these escape sequences.
             ch = getch();
             while (ch != '"' && ch != '\n' && ch != EndOfInput) {
                 if (len < MaxTokenLength) {
+                    if (ch == '\\' && !pp->disableEscapeSequences) {
+                        int nextCh = getch();
+                        switch (nextCh) {
+                        case '\'': ch = 0x27; break;
+                        case '"':  ch = 0x22; break;
+                        case '?':  ch = 0x3f; break;
+                        case '\\': ch = 0x5c; break;
+                        case 'a':  ch = 0x07; break;
+                        case 'b':  ch = 0x08; break;
+                        case 'f':  ch = 0x0c; break;
+                        case 'n':  ch = 0x0a; break;
+                        case 'r':  ch = 0x0d; break;
+                        case 't':  ch = 0x09; break;
+                        case 'v':  ch = 0x0b; break;
+                        case 'x': 
+                            // Hex value, arbitrary number of characters. Terminated by the first
+                            // non-hex digit
+                            {
+                                int numDigits = 0;
+                                ch = 0;
+                                while (true) {
+                                    nextCh = getch();
+                                    if (nextCh >= '0' && nextCh <= '9')
+                                        nextCh -= '0';
+                                    else if (nextCh >= 'A' && nextCh <= 'F')
+                                        nextCh -= 'A' - 10;
+                                    else if (nextCh >= 'a' && nextCh <= 'f')
+                                        nextCh -= 'a' - 10;
+                                    else {
+                                        ungetch();
+                                        break;
+                                    }
+                                    numDigits++;
+                                    ch = ch * 0x10 + nextCh;
+                                }
+                                if (numDigits == 0) {
+                                    pp->parseContext.ppError(ppToken->loc, "Expected hex value in escape sequence", "string", "");
+                                }
+                                break;
+                            }
+                        case '0':
+                        case '1':
+                        case '2':
+                        case '3':
+                        case '4':
+                        case '5':
+                        case '6':
+                        case '7':
+                            // Octal value, up to three octal digits
+                            {
+                                int numDigits = 1;
+                                ch = nextCh - '0';
+                                while (numDigits < 3) {
+                                    nextCh = getch();
+                                    if (nextCh >= '0' && nextCh <= '7')
+                                        nextCh -= '0';
+                                    else {
+                                        ungetch();
+                                        break;
+                                    }
+                                    numDigits++;
+                                    ch = ch * 8 + nextCh;
+                                }
+                                break;
+                            }
+                        default:
+                            pp->parseContext.ppError(ppToken->loc, "Invalid escape sequence", "string", "");
+                            break;
+                        }
+                    }
                     ppToken->name[len] = (char)ch;
                     len++;
                     ch = getch();
@@ -1121,10 +1281,14 @@ int TPpContext::tokenize(TPpToken& ppToken)
                 continue;
             break;
         case PpAtomConstString:
+            // HLSL allows string literals.
+            // GLSL allows string literals with GL_EXT_debug_printf.
             if (ifdepth == 0 && parseContext.intermediate.getSource() != EShSourceHlsl) {
-                // HLSL allows string literals.
-                parseContext.ppError(ppToken.loc, "string literals not supported", "\"\"", "");
-                continue;
+              const char* const string_literal_EXTs[] = { E_GL_EXT_debug_printf, E_GL_EXT_spirv_intrinsics };
+              parseContext.requireExtensions(ppToken.loc, 2, string_literal_EXTs, "string literal");
+              if (!parseContext.extensionTurnedOn(E_GL_EXT_debug_printf) &&
+                  !parseContext.extensionTurnedOn(E_GL_EXT_spirv_intrinsics))
+                  continue;
             }
             break;
         case '\'':

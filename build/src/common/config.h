@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -24,14 +24,10 @@
 // Platform stuff.
 #if defined(WIN32) || defined(_WIN32)
 #	define LOVE_WINDOWS 1
-	// If _USING_V110_SDK71_ is defined it means we are using the xp toolset.
-#	if defined(_MSC_VER) && (_MSC_VER >= 1700) && !_USING_V110_SDK71_
-#		include <winapifamily.h>
-#		if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP) && !WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
-#			define LOVE_WINDOWS_UWP 1
-#			define LOVE_NO_MODPLUG 1
-#			define LOVE_NOMPG123 1
-#		endif
+#	include <winapifamily.h>
+#	if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP) && !WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
+#		define LOVE_WINDOWS_UWP 1
+#		define LOVE_NO_MODPLUG 1
 #	endif
 #endif
 #if defined(linux) || defined(__linux) || defined(__linux__)
@@ -39,13 +35,15 @@
 #endif
 #if defined(__ANDROID__)
 #	define LOVE_ANDROID 1
+// Needed for ENet
+#	define HAS_SOCKLEN_T 1
 #endif
 #if defined(__APPLE__)
 #	include <TargetConditionals.h>
 #	if TARGET_OS_IPHONE
 #		define LOVE_IOS 1
 #	elif TARGET_OS_MAC
-#		define LOVE_MACOSX 1
+#		define LOVE_MACOS 1
 #	endif
 #endif
 #if defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
@@ -72,7 +70,7 @@
 #endif
 
 // NEON instructions.
-#if defined(__ARM_NEON)
+#if defined(__ARM_NEON) || defined(_M_ARM64)
 #	define LOVE_SIMD_NEON
 #endif
 
@@ -104,7 +102,7 @@
 #endif
 
 // DLL-stuff.
-#if defined(_MSC_VER)
+#if defined(_MSC_VER) || defined(__MINGW32__)
 #	define LOVE_EXPORT __declspec(dllexport)
 #elif defined(__GNUC__) || defined(__clang__)
 #	define LOVE_EXPORT __attribute__((visibility("default")))
@@ -116,15 +114,21 @@
 #ifndef LOVE_WINDOWS_UWP
 #	define LOVE_LEGENDARY_CONSOLE_IO_HACK
 #endif // LOVE_WINDOWS_UWP
+#ifndef __MINGW32__
 #	define NOMINMAX
 #endif
+#endif
 
-#if defined(LOVE_MACOSX) || defined(LOVE_IOS)
+#if defined(LOVE_MACOS) || defined(LOVE_IOS)
 #	define LOVE_LEGENDARY_APP_ARGV_HACK
 #endif
 
-#if defined(LOVE_ANDROID) || defined(LOVE_IOS)
-#	define LOVE_LEGENDARY_ACCELEROMETER_AS_JOYSTICK_HACK
+#if defined(LOVE_WINDOWS) || defined(LOVE_LINUX) || defined(LOVE_ANDROID)
+#	define LOVE_GRAPHICS_VULKAN
+#endif
+
+#if defined(LOVE_MACOS) || defined(LOVE_IOS)
+#	define LOVE_GRAPHICS_METAL
 #endif
 
 // Autotools config.h
@@ -152,6 +156,7 @@
 #	define LOVE_ENABLE_MATH
 #	define LOVE_ENABLE_MOUSE
 #	define LOVE_ENABLE_PHYSICS
+#	define LOVE_ENABLE_SENSOR
 #	define LOVE_ENABLE_SOUND
 #	define LOVE_ENABLE_SYSTEM
 #	define LOVE_ENABLE_THREAD
@@ -163,10 +168,11 @@
 #	define LOVE_ENABLE_ENET
 #	define LOVE_ENABLE_LUASOCKET
 #	define LOVE_ENABLE_LUA53
+#	define LOVE_ENABLE_LUAHTTPS
 #endif
 
 // Check we have a sane configuration
-#if !defined(LOVE_WINDOWS) && !defined(LOVE_LINUX) && !defined(LOVE_IOS) && !defined(LOVE_MACOSX) && !defined(LOVE_ANDROID)
+#if !defined(LOVE_WINDOWS) && !defined(LOVE_LINUX) && !defined(LOVE_IOS) && !defined(LOVE_MACOS) && !defined(LOVE_ANDROID)
 #	error Could not detect target platform
 #endif
 #if !defined(LOVE_LITTLE_ENDIAN) && !defined(LOVE_BIG_ENDIAN)

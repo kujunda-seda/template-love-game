@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -23,12 +23,12 @@
 #include "common/math.h"
 
 #include "Shape.h"
-#include "Fixture.h"
 #include "World.h"
 #include "Physics.h"
 
 // Needed for luax_pushjoint.
 #include "wrap_Joint.h"
+#include "wrap_Shape.h"
 
 namespace love
 {
@@ -39,29 +39,21 @@ namespace box2d
 
 Body::Body(World *world, b2Vec2 p, Body::Type type)
 	: world(world)
-	, udata(nullptr)
+	, hasCustomMass(false)
 {
-	udata = new bodyudata();
-	udata->ref = nullptr;
 	b2BodyDef def;
 	def.position = Physics::scaleDown(p);
-	def.userData = (void *) udata;
+	def.userData.pointer = (uintptr_t)this;
 	body = world->world->CreateBody(&def);
 	// Box2D body holds a reference to the love Body.
 	this->retain();
 	this->setType(type);
-	world->registerObject(body, this);
 }
 
 Body::~Body()
 {
-	if (!udata)
-		return;
-
-	if (udata->ref)
-		delete udata->ref;
-
-	delete udata;
+	if (ref)
+		delete ref;
 }
 
 float Body::getX()
@@ -110,6 +102,14 @@ void Body::getLocalCenter(float &x_o, float &y_o)
 float Body::getAngularVelocity() const
 {
 	return body->GetAngularVelocity();
+}
+
+void Body::getKinematicState(b2Vec2 &pos_o, float &a_o, b2Vec2 &vel_o, float &da_o) const
+{
+	pos_o = Physics::scaleUp(body->GetPosition());
+	a_o = body->GetAngle();
+	vel_o = Physics::scaleUp(body->GetLinearVelocity());
+	da_o = body->GetAngularVelocity();
 }
 
 float Body::getMass() const
@@ -225,6 +225,13 @@ void Body::setAngularVelocity(float r)
 	body->SetAngularVelocity(r);
 }
 
+void Body::setKinematicState(b2Vec2 pos, float a, b2Vec2 vel, float da)
+{
+	body->SetTransform(Physics::scaleDown(pos), a);
+	body->SetLinearVelocity(Physics::scaleDown(vel));
+	body->SetAngularVelocity(da);
+}
+
 void Body::setPosition(float x, float y)
 {
 	body->SetTransform(Physics::scaleDown(b2Vec2(x, y)), body->GetAngle());
@@ -243,6 +250,7 @@ void Body::setLinearDamping(float d)
 void Body::resetMassData()
 {
 	body->ResetMassData();
+	hasCustomMass = false;
 }
 
 void Body::setMassData(float x, float y, float m, float i)
@@ -252,6 +260,7 @@ void Body::setMassData(float x, float y, float m, float i)
 	massData.mass = m;
 	massData.I = Physics::scaleDown(Physics::scaleDown(i));
 	body->SetMassData(&massData);
+	hasCustomMass = true;
 }
 
 void Body::setMass(float m)
@@ -260,6 +269,7 @@ void Body::setMass(float m)
 	body->GetMassData(&data);
 	data.mass = m;
 	body->SetMassData(&data);
+	hasCustomMass = true;
 }
 
 void Body::setInertia(float i)
@@ -269,6 +279,7 @@ void Body::setInertia(float i)
 	massData.mass = body->GetMass();
 	massData.I = Physics::scaleDown(Physics::scaleDown(i));
 	body->SetMassData(&massData);
+	hasCustomMass = true;
 }
 
 void Body::setGravityScale(float scale)
@@ -394,9 +405,9 @@ void Body::setBullet(bool bullet)
 	return body->SetBullet(bullet);
 }
 
-bool Body::isActive() const
+bool Body::isEnabled() const
 {
-	return body->IsActive();
+	return body->IsEnabled();
 }
 
 bool Body::isAwake() const
@@ -414,9 +425,9 @@ bool Body::isSleepingAllowed() const
 	return body->IsSleepingAllowed();
 }
 
-void Body::setActive(bool active)
+void Body::setEnabled(bool enabled)
 {
-	body->SetActive(active);
+	body->SetEnabled(enabled);
 }
 
 void Body::setAwake(bool awake)
@@ -455,7 +466,20 @@ World *Body::getWorld() const
 	return world;
 }
 
-int Body::getFixtures(lua_State *L) const
+Shape *Body::getShape() const
+{
+	b2Fixture *f = body->GetFixtureList();
+	if (f == nullptr)
+		return nullptr;
+
+	Shape *shape = (Shape *)(f->GetUserData().pointer);
+	if (!shape)
+		throw love::Exception("A Shape has escaped Memoizer!");
+
+	return shape;
+}
+
+int Body::getShapes(lua_State *L) const
 {
 	lua_newtable(L);
 	b2Fixture *f = body->GetFixtureList();
@@ -464,10 +488,10 @@ int Body::getFixtures(lua_State *L) const
 	{
 		if (!f)
 			break;
-		Fixture *fixture = (Fixture *)world->findObject(f);
-		if (!fixture)
-			throw love::Exception("A fixture has escaped Memoizer!");
-		luax_pushtype(L, fixture);
+		Shape *shape = (Shape *)(f->GetUserData().pointer);
+		if (!shape)
+			throw love::Exception("A Shape has escaped Memoizer!");
+		luax_pushshape(L, shape);
 		lua_rawseti(L, -2, i);
 		i++;
 	}
@@ -486,7 +510,7 @@ int Body::getJoints(lua_State *L) const
 		if (!je)
 			break;
 
-		Joint *joint = (Joint *) world->findObject(je->joint);
+		Joint *joint = (Joint *) (je->joint->GetUserData().pointer);
 		if (!joint)
 			throw love::Exception("A joint has escaped Memoizer!");
 
@@ -535,12 +559,11 @@ void Body::destroy()
 	}
 
 	world->world->DestroyBody(body);
-	world->unregisterObject(body);
-	body = NULL;
+	body = nullptr;
 
 	// Remove userdata reference to avoid it sticking around after GC
-	if (udata && udata->ref)
-		udata->ref->unref();
+	if (ref)
+		ref->unref();
 
 	// Box2D body destroyed. Release its reference to the love Body.
 	this->release();
@@ -550,24 +573,18 @@ int Body::setUserData(lua_State *L)
 {
 	love::luax_assert_argc(L, 1, 1);
 
-	if (udata == nullptr)
-	{
-		udata = new bodyudata();
-		body->SetUserData((void *) udata);
-	}
+	if(!ref)
+		ref = new Reference();
 
-	if(!udata->ref)
-		udata->ref = new Reference();
-
-	udata->ref->ref(L);
+	ref->ref(L);
 
 	return 0;
 }
 
 int Body::getUserData(lua_State *L)
 {
-	if (udata != nullptr && udata->ref != nullptr)
-		udata->ref->push(L);
+	if (ref != nullptr)
+		ref->push(L);
 	else
 		lua_pushnil(L);
 

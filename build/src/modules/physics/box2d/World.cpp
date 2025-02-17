@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -20,7 +20,6 @@
 
 #include "World.h"
 
-#include "Fixture.h"
 #include "Shape.h"
 #include "Contact.h"
 #include "Physics.h"
@@ -28,6 +27,7 @@
 
 // Needed for World::getJoints. It should be moved to wrapper code...
 #include "wrap_Joint.h"
+#include "wrap_Shape.h"
 
 namespace love
 {
@@ -58,22 +58,22 @@ void World::ContactCallback::process(b2Contact *contact, const b2ContactImpulse 
 	{
 		ref->push(L);
 
-		// Push first fixture.
+		// Push first shape.
 		{
-			Fixture *a = (Fixture *)world->findObject(contact->GetFixtureA());
+			Shape *a = (Shape *)(contact->GetFixtureA()->GetUserData().pointer);
 			if (a != nullptr)
-				luax_pushtype(L, a);
+				luax_pushshape(L, a);
 			else
-				throw love::Exception("A fixture has escaped Memoizer!");
+				throw love::Exception("A Shape has escaped Memoizer!");
 		}
 
-		// Push second fixture.
+		// Push second shape.
 		{
-			Fixture *b = (Fixture *)world->findObject(contact->GetFixtureB());
+			Shape *b = (Shape *)(contact->GetFixtureB()->GetUserData().pointer);
 			if (b != nullptr)
-				luax_pushtype(L, b);
+				luax_pushshape(L, b);
 			else
-				throw love::Exception("A fixture has escaped Memoizer!");
+				throw love::Exception("A Shape has escaped Memoizer!");
 		}
 
 		Contact *cobj = (Contact *)world->findObject(contact);
@@ -112,41 +112,26 @@ World::ContactFilter::~ContactFilter()
 		delete ref;
 }
 
-bool World::ContactFilter::process(Fixture *a, Fixture *b)
+bool World::ContactFilter::process(Shape *a, Shape *b)
 {
-	// Handle masks, reimplemented from the manual
-	int filterA[3], filterB[3];
-	// [0] categoryBits
-	// [1] maskBits
-	// [2] groupIndex
-	a->getFilterData(filterA);
-	b->getFilterData(filterB);
-
-	if (filterA[2] != 0 && // 0 is the default group, so this does not count
-		filterA[2] == filterB[2]) // if they are in the same group
-		return filterA[2] > 0; // Negative indexes mean you don't collide
-
-	if ((filterA[1] & filterB[0]) == 0 ||
-		(filterB[1] & filterA[0]) == 0)
-		return false; // A and B aren't set to collide
-
 	if (ref != nullptr && L != nullptr)
 	{
 		ref->push(L);
-		luax_pushtype(L, a);
-		luax_pushtype(L, b);
+		luax_pushshape(L, a);
+		luax_pushshape(L, b);
 		lua_call(L, 2, 1);
 		return luax_toboolean(L, -1);
 	}
+
 	return true;
 }
 
-World::QueryCallback::QueryCallback(World *world, lua_State *L, int idx)
-	: world(world)
-	, L(L)
+World::QueryCallback::QueryCallback(lua_State *L, int idx)
+	: L(L)
 	, funcidx(idx)
 {
 	luaL_checktype(L, funcidx, LUA_TFUNCTION);
+	userargs = lua_gettop(L) - funcidx;
 }
 
 World::QueryCallback::~QueryCallback()
@@ -158,11 +143,13 @@ bool World::QueryCallback::ReportFixture(b2Fixture *fixture)
 	if (L != nullptr)
 	{
 		lua_pushvalue(L, funcidx);
-		Fixture *f = (Fixture *)world->findObject(fixture);
+		Shape *f = (Shape *)(fixture->GetUserData().pointer);
 		if (!f)
-			throw love::Exception("A fixture has escaped Memoizer!");
-		luax_pushtype(L, f);
-		lua_call(L, 1, 1);
+			throw love::Exception("A Shape has escaped Memoizer!");
+		luax_pushshape(L, f);
+		for (int i = 1; i <= userargs; i++)
+			lua_pushvalue(L, funcidx + i);
+		lua_call(L, 1 + userargs, 1);
 		bool cont = luax_toboolean(L, -1);
 		lua_pop(L, 1);
 		return cont;
@@ -171,37 +158,64 @@ bool World::QueryCallback::ReportFixture(b2Fixture *fixture)
 	return true;
 }
 
-World::RayCastCallback::RayCastCallback(World *world, lua_State *L, int idx)
-	: world(world)
+World::CollectCallback::CollectCallback(uint16 categoryMask, lua_State *L)
+	: categoryMask(categoryMask)
 	, L(L)
+{
+	lua_newtable(L);
+}
+
+World::CollectCallback::~CollectCallback()
+{
+}
+
+bool World::CollectCallback::ReportFixture(b2Fixture *f)
+{
+	if (categoryMask != 0xFFFF && (categoryMask & f->GetFilterData().categoryBits) == 0)
+		return true;
+
+	Shape *shape = (Shape *)(f->GetUserData().pointer);
+	if (!shape)
+		throw love::Exception("A Shape has escaped Memoizer!");
+	luax_pushshape(L, shape);
+	lua_rawseti(L, -2, i);
+	i++;
+	return true;
+}
+
+World::RayCastCallback::RayCastCallback(lua_State *L, int idx)
+	: L(L)
 	, funcidx(idx)
 {
 	luaL_checktype(L, funcidx, LUA_TFUNCTION);
+	userargs = lua_gettop(L) - funcidx;
 }
 
 World::RayCastCallback::~RayCastCallback()
 {
 }
 
-float32 World::RayCastCallback::ReportFixture(b2Fixture *fixture, const b2Vec2 &point, const b2Vec2 &normal, float32 fraction)
+float World::RayCastCallback::ReportFixture(b2Fixture *fixture, const b2Vec2 &point, const b2Vec2 &normal, float fraction)
 {
 	if (L != nullptr)
 	{
 		lua_pushvalue(L, funcidx);
-		Fixture *f = (Fixture *)world->findObject(fixture);
+		Shape *f = (Shape *)(fixture->GetUserData().pointer);
 		if (!f)
-			throw love::Exception("A fixture has escaped Memoizer!");
-		luax_pushtype(L, f);
+			throw love::Exception("A Shape has escaped Memoizer!");
+		luax_pushshape(L, f);
 		b2Vec2 scaledPoint = Physics::scaleUp(point);
 		lua_pushnumber(L, scaledPoint.x);
 		lua_pushnumber(L, scaledPoint.y);
 		lua_pushnumber(L, normal.x);
 		lua_pushnumber(L, normal.y);
 		lua_pushnumber(L, fraction);
-		lua_call(L, 6, 1);
+		for (int i = 1; i <= userargs; i++)
+			lua_pushvalue(L, funcidx + i);
+		lua_call(L, 6 + userargs, 1);
 		if (!lua_isnumber(L, -1))
 			luaL_error(L, "Raycast callback didn't return a number!");
-		float32 fraction = (float32) lua_tonumber(L, -1);
+		float fraction = (float) lua_tonumber(L, -1);
 		lua_pop(L, 1);
 		return fraction;
 	}
@@ -209,16 +223,40 @@ float32 World::RayCastCallback::ReportFixture(b2Fixture *fixture, const b2Vec2 &
 	return 0;
 }
 
+World::RayCastOneCallback::RayCastOneCallback(uint16 categoryMask, bool any)
+	: hitFixture(nullptr)
+	, hitPoint()
+	, hitNormal()
+	, hitFraction(1.0f)
+	, categoryMask(categoryMask)
+	, any(any)
+{
+}
+
+float World::RayCastOneCallback::ReportFixture(b2Fixture *fixture, const b2Vec2 &point, const b2Vec2 &normal, float fraction)
+{
+	if (categoryMask != 0xFFFF && (categoryMask & fixture->GetFilterData().categoryBits) == 0)
+		return -1;
+
+	hitFixture = fixture;
+	hitPoint = point;
+	hitNormal = normal;
+	hitFraction = fraction;
+
+	// Returning the fraction makes sure it doesn't process anything farther away in subsequent iterations.
+	return any ? 0 : fraction;
+}
+
 void World::SayGoodbye(b2Fixture *fixture)
 {
-	Fixture *f = (Fixture *)findObject(fixture);
+	Shape *s = (Shape *)(fixture->GetUserData().pointer);
 	// Hint implicit destruction with true.
-	if (f) f->destroy(true);
+	if (s) s->destroy(true);
 }
 
 void World::SayGoodbye(b2Joint *joint)
 {
-	Joint *j = (Joint *)findObject(joint);
+	Joint *j = (Joint *)(joint->GetUserData().pointer);
 	// Hint implicit destruction with true.
 	if (j) j->destroyJoint(true);
 }
@@ -280,11 +318,11 @@ void World::update(float dt, int velocityIterations, int positionIterations)
 		// Release for reference in vector.
 		b->release();
 	}
-	for (Fixture *f : destructFixtures)
+	for (Shape *s : destructShapes)
 	{
-		if (f->isValid()) f->destroy();
+		if (s->isValid()) s->destroy();
 		// Release for reference in vector.
-		f->release();
+		s->release();
 	}
 	for (Joint *j : destructJoints)
 	{
@@ -293,7 +331,7 @@ void World::update(float dt, int velocityIterations, int positionIterations)
 		j->release();
 	}
 	destructBodies.clear();
-	destructFixtures.clear();
+	destructShapes.clear();
 	destructJoints.clear();
 
 	if (destructWorld)
@@ -328,11 +366,24 @@ void World::PostSolve(b2Contact *contact, const b2ContactImpulse *impulse)
 
 bool World::ShouldCollide(b2Fixture *fixtureA, b2Fixture *fixtureB)
 {
-	// Fixtures should be memoized, if we created them
-	Fixture *a = (Fixture *)findObject(fixtureA);
-	Fixture *b = (Fixture *)findObject(fixtureB);
+	const b2Filter &filterA = fixtureA->GetFilterData();
+	const b2Filter &filterB = fixtureB->GetFilterData();
+
+	// From b2_world_callbacks.cpp
+	// 0 is the default group index. If they're customized to be the same group,
+	// allow collisions if it's positive and disallow if it's negative.
+	if (filterA.groupIndex != 0 && filterA.groupIndex == filterB.groupIndex)
+		return filterA.groupIndex > 0;
+
+	if ((filterA.maskBits & filterB.categoryBits) == 0 || (filterA.categoryBits & filterB.maskBits) == 0)
+		return false;
+
+	// Shapes should be memoized, if we created them
+	Shape *a = (Shape *)(fixtureA->GetUserData().pointer);
+	Shape *b = (Shape *)(fixtureB->GetUserData().pointer);
 	if (!a || !b)
-		throw love::Exception("A fixture has escaped Memoizer!");
+		throw love::Exception("A Shape has escaped Memoizer!");
+
 	return filter.process(a, b);
 }
 
@@ -485,7 +536,7 @@ int World::getBodies(lua_State *L) const
 			break;
 		if (b == groundBody)
 			continue;
-		Body *body = (Body *)findObject(b);
+		Body *body = (Body *)(b->GetUserData().pointer);
 		if (!body)
 			throw love::Exception("A body has escaped Memoizer!");
 		luax_pushtype(L, body);
@@ -504,7 +555,7 @@ int World::getJoints(lua_State *L) const
 	do
 	{
 		if (!j) break;
-		Joint *joint = (Joint *)findObject(j);
+		Joint *joint = (Joint *)(j->GetUserData().pointer);
 		if (!joint) throw love::Exception("A joint has escaped Memoizer!");
 		luax_pushjoint(L, joint);
 		lua_rawseti(L, -2, i);
@@ -541,7 +592,7 @@ b2Body *World::getGroundBody() const
 	return groundBody;
 }
 
-int World::queryBoundingBox(lua_State *L)
+int World::queryShapesInArea(lua_State *L)
 {
 	b2AABB box;
 	float lx = (float)luaL_checknumber(L, 1);
@@ -551,9 +602,24 @@ int World::queryBoundingBox(lua_State *L)
 	box.lowerBound = Physics::scaleDown(b2Vec2(lx, ly));
 	box.upperBound = Physics::scaleDown(b2Vec2(ux, uy));
 	luaL_checktype(L, 5, LUA_TFUNCTION);
-	QueryCallback query(this, L, 5);
+	QueryCallback query(L, 5);
 	world->QueryAABB(&query, box);
 	return 0;
+}
+
+int World::getShapesInArea(lua_State *L)
+{
+	float lx = (float)luaL_checknumber(L, 1);
+	float ly = (float)luaL_checknumber(L, 2);
+	float ux = (float)luaL_checknumber(L, 3);
+	float uy = (float)luaL_checknumber(L, 4);
+	uint16 categoryMaskBits = (uint16)luaL_optinteger(L, 5, 0xFFFF);
+	b2AABB box;
+	box.lowerBound = Physics::scaleDown(b2Vec2(lx, ly));
+	box.upperBound = Physics::scaleDown(b2Vec2(ux, uy));
+	CollectCallback query(categoryMaskBits, L);
+	world->QueryAABB(&query, box);
+	return 1;
 }
 
 int World::rayCast(lua_State *L)
@@ -565,8 +631,66 @@ int World::rayCast(lua_State *L)
 	b2Vec2 v1 = Physics::scaleDown(b2Vec2(x1, y1));
 	b2Vec2 v2 = Physics::scaleDown(b2Vec2(x2, y2));
 	luaL_checktype(L, 5, LUA_TFUNCTION);
-	RayCastCallback raycast(this, L, 5);
+	RayCastCallback raycast(L, 5);
 	world->RayCast(&raycast, v1, v2);
+	return 0;
+}
+
+int World::rayCastAny(lua_State *L)
+{
+	float x1 = (float)luaL_checknumber(L, 1);
+	float y1 = (float)luaL_checknumber(L, 2);
+	float x2 = (float)luaL_checknumber(L, 3);
+	float y2 = (float)luaL_checknumber(L, 4);
+	uint16 categoryMaskBits = (uint16)luaL_optinteger(L, 5, 0xFFFF);
+	b2Vec2 v1 = Physics::scaleDown(b2Vec2(x1, y1));
+	b2Vec2 v2 = Physics::scaleDown(b2Vec2(x2, y2));
+	RayCastOneCallback raycast(categoryMaskBits, true);
+	world->RayCast(&raycast, v1, v2);
+	if (raycast.hitFixture)
+	{
+		Shape *f = (Shape *)(raycast.hitFixture->GetUserData().pointer);
+		if (f == nullptr)
+			return luaL_error(L, "A Shape has escaped Memoizer!");
+		luax_pushshape(L, f);
+
+		b2Vec2 hitPoint = Physics::scaleUp(raycast.hitPoint);
+		lua_pushnumber(L, hitPoint.x);
+		lua_pushnumber(L, hitPoint.y);
+		lua_pushnumber(L, raycast.hitNormal.x);
+		lua_pushnumber(L, raycast.hitNormal.y);
+		lua_pushnumber(L, raycast.hitFraction);
+		return 6;
+	}
+	return 0;
+}
+
+int World::rayCastClosest(lua_State *L)
+{
+	float x1 = (float)luaL_checknumber(L, 1);
+	float y1 = (float)luaL_checknumber(L, 2);
+	float x2 = (float)luaL_checknumber(L, 3);
+	float y2 = (float)luaL_checknumber(L, 4);
+	uint16 categoryMaskBits = (uint16)luaL_optinteger(L, 5, 0xFFFF);
+	b2Vec2 v1 = Physics::scaleDown(b2Vec2(x1, y1));
+	b2Vec2 v2 = Physics::scaleDown(b2Vec2(x2, y2));
+	RayCastOneCallback raycast(categoryMaskBits, false);
+	world->RayCast(&raycast, v1, v2);
+	if (raycast.hitFixture)
+	{
+		Shape *f = (Shape *)(raycast.hitFixture->GetUserData().pointer);
+		if (f == nullptr)
+			return luaL_error(L, "A Shape has escaped Memoizer!");
+		luax_pushshape(L, f);
+
+		b2Vec2 hitPoint = Physics::scaleUp(raycast.hitPoint);
+		lua_pushnumber(L, hitPoint.x);
+		lua_pushnumber(L, hitPoint.y);
+		lua_pushnumber(L, raycast.hitNormal.x);
+		lua_pushnumber(L, raycast.hitNormal.y);
+		lua_pushnumber(L, raycast.hitFraction);
+		return 6;
+	}
 	return 0;
 }
 
@@ -599,7 +723,7 @@ void World::destroy()
 		b = b->GetNext();
 		if (t == groundBody)
 			continue;
-		Body *body = (Body *)findObject(t);
+		Body *body = (Body *)(t->GetUserData().pointer);
 		if (!body)
 			throw love::Exception("A body has escaped Memoizer!");
 		body->destroy();

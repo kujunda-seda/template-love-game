@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -29,36 +29,49 @@ namespace mouse
 namespace sdl
 {
 
-Cursor::Cursor(image::ImageData *data, int hotx, int hoty)
+Cursor::Cursor(const std::vector<image::ImageData *> &imageData, int hotx, int hoty)
 	: cursor(nullptr)
 	, type(CURSORTYPE_IMAGE)
 	, systemType(CURSOR_MAX_ENUM)
 {
-	Uint32 rmask, gmask, bmask, amask;
-#ifdef LOVE_BIG_ENDIAN
-	rmask = 0xFF000000;
-	gmask = 0x00FF0000;
-	bmask = 0x0000FF00;
-	amask = 0x000000FF;
-#else
-	rmask = 0x000000FF;
-	gmask = 0x0000FF00;
-	bmask = 0x00FF0000;
-	amask = 0xFF000000;
-#endif
+	if (imageData.empty())
+		throw love::Exception("At least one ImageData must be provided for a custom cursor.");
 
-	int w = data->getWidth();
-	int h = data->getHeight();
-	int pitch = w * 4;
+	std::vector<SDL_Surface *> surfaces;
 
-	SDL_Surface *surface = SDL_CreateRGBSurfaceFrom(data->getData(), w, h, 32, pitch, rmask, gmask, bmask, amask);
-	if (!surface)
-		throw love::Exception("Cannot create cursor: out of memory!");
+	for (image::ImageData *data : imageData)
+	{
+		int w = data->getWidth();
+		int h = data->getHeight();
+		int pitch = w * 4;
 
-	cursor = SDL_CreateColorCursor(surface, hotx, hoty);
-	SDL_FreeSurface(surface);
+		if (getLinearPixelFormat(data->getFormat()) != PIXELFORMAT_RGBA8_UNORM)
+		{
+			for (SDL_Surface *surface : surfaces)
+				SDL_DestroySurface(surface);
+			throw love::Exception("Cannot create cursor: ImageData pixel format must be rgba8.");
+		}
 
-	if (!cursor)
+		surfaces.push_back(SDL_CreateSurfaceFrom(w, h, SDL_PIXELFORMAT_ABGR8888, data->getData(), pitch));
+
+		if (surfaces.back() == nullptr)
+		{
+			for (SDL_Surface *surface : surfaces)
+				SDL_DestroySurface(surface);
+			throw love::Exception("Cannot create cursor: out of memory.");
+		}
+	}
+
+	// Add alternate representations for the OS to use in different DPI scales.
+	for (size_t i = 1; i < surfaces.size(); i++)
+		SDL_AddSurfaceAlternateImage(surfaces[0], surfaces[i]);
+
+	cursor = SDL_CreateColorCursor(surfaces[0], hotx, hoty);
+
+	for (SDL_Surface *surface : surfaces)
+		SDL_DestroySurface(surface);
+
+	if (cursor == nullptr)
 		throw love::Exception("Cannot create cursor: %s", SDL_GetError());
 }
 
@@ -74,14 +87,14 @@ Cursor::Cursor(mouse::Cursor::SystemCursor cursortype)
 	else
 		throw love::Exception("Cannot create system cursor: invalid type.");
 
-	if (!cursor)
+	if (cursor == nullptr)
 		throw love::Exception("Cannot create system cursor: %s", SDL_GetError());
 }
 
 Cursor::~Cursor()
 {
 	if (cursor)
-		SDL_FreeCursor(cursor);
+		SDL_DestroyCursor(cursor);
 }
 
 void *Cursor::getHandle() const
@@ -101,18 +114,18 @@ Cursor::SystemCursor Cursor::getSystemType() const
 
 EnumMap<Cursor::SystemCursor, SDL_SystemCursor, Cursor::CURSOR_MAX_ENUM>::Entry Cursor::systemCursorEntries[] =
 {
-	{Cursor::CURSOR_ARROW, SDL_SYSTEM_CURSOR_ARROW},
-	{Cursor::CURSOR_IBEAM, SDL_SYSTEM_CURSOR_IBEAM},
+	{Cursor::CURSOR_ARROW, SDL_SYSTEM_CURSOR_DEFAULT},
+	{Cursor::CURSOR_IBEAM, SDL_SYSTEM_CURSOR_TEXT},
 	{Cursor::CURSOR_WAIT, SDL_SYSTEM_CURSOR_WAIT},
 	{Cursor::CURSOR_CROSSHAIR, SDL_SYSTEM_CURSOR_CROSSHAIR},
-	{Cursor::CURSOR_WAITARROW, SDL_SYSTEM_CURSOR_WAITARROW},
-	{Cursor::CURSOR_SIZENWSE, SDL_SYSTEM_CURSOR_SIZENWSE},
-	{Cursor::CURSOR_SIZENESW, SDL_SYSTEM_CURSOR_SIZENESW},
-	{Cursor::CURSOR_SIZEWE, SDL_SYSTEM_CURSOR_SIZEWE},
-	{Cursor::CURSOR_SIZENS, SDL_SYSTEM_CURSOR_SIZENS},
-	{Cursor::CURSOR_SIZEALL, SDL_SYSTEM_CURSOR_SIZEALL},
-	{Cursor::CURSOR_NO, SDL_SYSTEM_CURSOR_NO},
-	{Cursor::CURSOR_HAND, SDL_SYSTEM_CURSOR_HAND},
+	{Cursor::CURSOR_WAITARROW, SDL_SYSTEM_CURSOR_PROGRESS},
+	{Cursor::CURSOR_SIZENWSE, SDL_SYSTEM_CURSOR_NWSE_RESIZE},
+	{Cursor::CURSOR_SIZENESW, SDL_SYSTEM_CURSOR_NESW_RESIZE},
+	{Cursor::CURSOR_SIZEWE, SDL_SYSTEM_CURSOR_EW_RESIZE},
+	{Cursor::CURSOR_SIZENS, SDL_SYSTEM_CURSOR_NS_RESIZE},
+	{Cursor::CURSOR_SIZEALL, SDL_SYSTEM_CURSOR_MOVE},
+	{Cursor::CURSOR_NO, SDL_SYSTEM_CURSOR_NOT_ALLOWED},
+	{Cursor::CURSOR_HAND, SDL_SYSTEM_CURSOR_POINTER},
 };
 
 EnumMap<Cursor::SystemCursor, SDL_SystemCursor, Cursor::CURSOR_MAX_ENUM> Cursor::systemCursors(Cursor::systemCursorEntries, sizeof(Cursor::systemCursorEntries));

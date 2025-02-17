@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -44,7 +44,7 @@ class StreamBufferClientMemory final : public love::graphics::StreamBuffer
 {
 public:
 
-	StreamBufferClientMemory(BufferType mode, size_t size)
+	StreamBufferClientMemory(BufferUsage mode, size_t size)
 		: love::graphics::StreamBuffer(mode, size)
 		, data(nullptr)
 	{
@@ -61,6 +61,11 @@ public:
 	virtual ~StreamBufferClientMemory()
 	{
 		delete[] data;
+	}
+
+	size_t getGPUReadOffset() const override
+	{
+		return (size_t) data;
 	}
 
 	MapInfo map(size_t /*minsize*/) override
@@ -86,7 +91,7 @@ class StreamBufferSubDataOrphan final : public love::graphics::StreamBuffer, pub
 {
 public:
 
-	StreamBufferSubDataOrphan(BufferType mode, size_t size)
+	StreamBufferSubDataOrphan(BufferUsage mode, size_t size)
 		: love::graphics::StreamBuffer(mode, size)
 		, vbo(0)
 		, glMode(OpenGL::getGLBufferType(mode))
@@ -109,6 +114,11 @@ public:
 	{
 		unloadVolatile();
 		delete[] data;
+	}
+
+	size_t getGPUReadOffset() const override
+	{
+		return frameGPUReadOffset;
 	}
 
 	MapInfo map(size_t /*minsize*/) override
@@ -184,13 +194,18 @@ class StreamBufferSync : public love::graphics::StreamBuffer
 {
 public:
 
-	StreamBufferSync(BufferType type, size_t size)
+	StreamBufferSync(BufferUsage type, size_t size)
 		: love::graphics::StreamBuffer(type, size)
 		, frameIndex(0)
 		, syncs()
 	{}
 
 	virtual ~StreamBufferSync() {}
+
+	size_t getGPUReadOffset() const override
+	{
+		return (frameIndex * bufferSize) + frameGPUReadOffset;
+	}
 
 	void nextFrame() override
 	{
@@ -220,7 +235,7 @@ class StreamBufferMapSync final : public StreamBufferSync, public Volatile
 {
 public:
 
-	StreamBufferMapSync(BufferType type, size_t size)
+	StreamBufferMapSync(BufferUsage type, size_t size)
 		: StreamBufferSync(type, size)
 		, vbo(0)
 		, glMode(OpenGL::getGLBufferType(mode))
@@ -302,7 +317,7 @@ public:
 
 	// Coherent mapping is supposedly faster on intel/nvidia aside from a couple
 	// old nvidia GPUs.
-	StreamBufferPersistentMapSync(BufferType type, size_t size, bool coherent = true)
+	StreamBufferPersistentMapSync(BufferUsage type, size_t size, bool coherent = true)
 		: StreamBufferSync(type, size)
 		, vbo(0)
 		, glMode(OpenGL::getGLBufferType(mode))
@@ -393,7 +408,7 @@ class StreamBufferPinnedMemory final : public StreamBufferSync, public Volatile
 {
 public:
 
-	StreamBufferPinnedMemory(BufferType type, size_t size)
+	StreamBufferPinnedMemory(BufferUsage type, size_t size)
 		: StreamBufferSync(type, size)
 		, vbo(0)
 		, glMode(OpenGL::getGLBufferType(mode))
@@ -491,7 +506,7 @@ private:
 
 }; // StreamBufferPinnedMemory
 
-love::graphics::StreamBuffer *CreateStreamBuffer(BufferType mode, size_t size)
+love::graphics::StreamBuffer *CreateStreamBuffer(BufferUsage mode, size_t size)
 {
 	if (gl.isCoreProfile())
 	{
@@ -524,7 +539,7 @@ love::graphics::StreamBuffer *CreateStreamBuffer(BufferType mode, size_t size)
 			// slow on most drivers. On macOS, having a separate driver thread
 			// is opt-in via an API, and we don't do it, so we can use this
 			// instead of the (potentially slower) SubData approach.
-#ifdef LOVE_MACOSX
+#ifdef LOVE_MACOS
 			return new StreamBufferMapSync(mode, size);
 #endif
 		}

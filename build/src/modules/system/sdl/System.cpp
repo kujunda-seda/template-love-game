@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -23,8 +23,10 @@
 #include "window/Window.h"
 
 // SDL
-#include <SDL_clipboard.h>
-#include <SDL_cpuinfo.h>
+#include <SDL3/SDL_clipboard.h>
+#include <SDL3/SDL_cpuinfo.h>
+#include <SDL3/SDL_locale.h>
+#include <SDL3/SDL_misc.h>
 
 namespace love
 {
@@ -34,17 +36,13 @@ namespace sdl
 {
 
 System::System()
+	: love::system::System("love.system.sdl")
 {
-}
-
-const char *System::getName() const
-{
-	return "love.system.sdl";
 }
 
 int System::getProcessorCount() const
 {
-	return SDL_GetCPUCount();
+	return SDL_GetNumLogicalCPUCores();
 }
 
 bool System::isWindowOpen() const
@@ -88,6 +86,30 @@ love::system::System::PowerState System::getPowerInfo(int &seconds, int &percent
 	powerStates.find(sdlstate, state);
 
 	return state;
+}
+
+bool System::openURL(const std::string &url) const
+{
+	return SDL_OpenURL(url.c_str());
+}
+
+std::vector<std::string> System::getPreferredLocales() const
+{
+	std::vector<std::string> result;
+
+	int count = 0;
+	SDL_Locale **locales = SDL_GetPreferredLocales(&count);
+	for (int i = 0; i < count; i++)
+	{
+		SDL_Locale *locale = locales[i];
+		if (locale->country)
+			result.push_back(std::string(locale->language) + "_" + std::string(locale->country));
+		else
+			result.push_back(locale->language);
+	}
+	SDL_free(locales);
+
+	return result;
 }
 
 EnumMap<System::PowerState, SDL_PowerState, System::POWER_MAX_ENUM>::Entry System::powerEntries[] =

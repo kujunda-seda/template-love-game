@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -62,7 +62,7 @@ public:
 	static love::Type type;
 
 	ImageData(Data *data);
-	ImageData(int width, int height, PixelFormat format = PIXELFORMAT_RGBA8);
+	ImageData(int width, int height, PixelFormat format);
 	ImageData(int width, int height, PixelFormat format, void *data, bool own);
 	ImageData(const ImageData &c);
 	virtual ~ImageData();
@@ -110,13 +110,10 @@ public:
 	 **/
 	love::filesystem::FileData *encode(FormatHandler::EncodedFormat format, const char *filename, bool writefile) const;
 
-	love::thread::Mutex *getMutex() const;
-
 	// Implements ImageDataBase.
 	ImageData *clone() const override;
 	void *getData() const override;
 	size_t getSize() const override;
-	bool isSRGB() const override;
 
 	size_t getPixelSize() const;
 
@@ -124,7 +121,6 @@ public:
 	PixelGetFunction getPixelGetFunction() const { return pixelGetFunction; }
 
 	static bool validPixelFormat(PixelFormat format);
-	static bool canPaste(PixelFormat src, PixelFormat dst);
 
 	static PixelSetFunction getPixelSetFunction(PixelFormat format);
 	static PixelGetFunction getPixelGetFunction(PixelFormat format);
@@ -143,8 +139,6 @@ private:
 
 	// The actual data.
 	unsigned char *data = nullptr;
-
-	love::thread::MutexRef mutex;
 
 	// The format handler that was used to decode the ImageData. We need to know
 	// this so we can properly delete memory allocated by the decoder.

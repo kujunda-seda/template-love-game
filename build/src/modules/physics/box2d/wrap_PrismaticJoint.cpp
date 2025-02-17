@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -178,12 +178,6 @@ int w_PrismaticJoint_getReferenceAngle(lua_State *L)
 	return 1;
 }
 
-int w_PrismaticJoint_hasLimitsEnabled(lua_State *L)
-{
-	luax_markdeprecated(L, "PrismaticJoint:hasLimitsEnabled", API_METHOD, DEPRECATED_RENAMED, "PrismaticJoint:areLimitsEnabled");
-	return w_PrismaticJoint_areLimitsEnabled(L);
-}
-
 static const luaL_Reg w_PrismaticJoint_functions[] =
 {
 	{ "getJointTranslation", w_PrismaticJoint_getJointTranslation },
@@ -205,9 +199,6 @@ static const luaL_Reg w_PrismaticJoint_functions[] =
 	{ "getLimits", w_PrismaticJoint_getLimits },
 	{ "getAxis", w_PrismaticJoint_getAxis },
 	{ "getReferenceAngle", w_PrismaticJoint_getReferenceAngle },
-
-	// Deprecated
-	{ "hasLimitsEnabled", w_PrismaticJoint_hasLimitsEnabled },
 
 	{ 0, 0 }
 };

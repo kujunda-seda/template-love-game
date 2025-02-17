@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -50,26 +50,24 @@ public:
 	virtual ~WeldJoint();
 
 	/**
-	 * Sets the response speed.
+	 * Sets the response speed. Dependent of mass
 	 **/
-	void setFrequency(float hz);
+	void setStiffness(float k);
 
 	/**
-	 * Gets the response speed.
+	 * Gets the response speed. Dependent of mass
 	 **/
-	float getFrequency() const;
+	float getStiffness() const;
 
 	/**
-	 * Sets the damping ratio.
-	 * 0 = no damping, 1 = critical damping.
+	 * Set the spring damping. Dependent of mass
 	 **/
-	void setDampingRatio(float d);
+	void setDamping(float ratio);
 
 	/**
-	 * Gets the damping ratio.
-	 * 0 = no damping, 1 = critical damping.
+	 * Get the spring damping. Dependent of mass
 	 **/
-	float getDampingRatio() const;
+	float getDamping() const;
 
 	/**
 	 * Gets the reference angle.

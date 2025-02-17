@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -24,9 +24,10 @@
 // LOVE
 #include "joystick/Joystick.h"
 #include "common/EnumMap.h"
+#include "common/int.h"
 
 // SDL
-#include <SDL.h>
+#include <SDL3/SDL.h>
 
 namespace love
 {
@@ -40,16 +41,17 @@ class Joystick : public love::joystick::Joystick
 public:
 
 	Joystick(int id);
-	Joystick(int id, int joyindex);
 
 	virtual ~Joystick();
 
-	bool open(int deviceindex) override;
+	bool open(int64 deviceid) override;
 	void close() override;
 
 	bool isConnected() const override;
 
 	const char *getName() const override;
+
+	JoystickType getJoystickType() const override;
 
 	int getAxisCount() const override;
 	int getButtonCount() const override;
@@ -61,8 +63,13 @@ public:
 
 	bool isDown(const std::vector<int> &buttonlist) const override;
 
-	bool openGamepad(int deviceindex) override;
+	void setPlayerIndex(int index) override;
+	int getPlayerIndex() const override;
+
+	bool openGamepad(int64 deviceid) override;
 	bool isGamepad() const override;
+
+	GamepadType getGamepadType() const override;
 
 	float getGamepadAxis(GamepadAxis axis) const override;
 	bool isGamepadDown(const std::vector<GamepadButton> &blist) const override;
@@ -83,25 +90,28 @@ public:
 	bool setVibration() override;
 	void getVibration(float &left, float &right) override;
 
+	bool hasSensor(Sensor::SensorType type) const override;
+	bool isSensorEnabled(Sensor::SensorType type) const override;
+	void setSensorEnabled(Sensor::SensorType type, bool enabled) override;
+	std::vector<float> getSensorData(Sensor::SensorType type) const override;
+
 	static bool getConstant(Hat in, Uint8 &out);
 	static bool getConstant(Uint8 in, Hat &out);
 
-	static bool getConstant(SDL_GameControllerAxis in, GamepadAxis &out);
-	static bool getConstant(GamepadAxis in, SDL_GameControllerAxis &out);
+	static bool getConstant(SDL_GamepadAxis in, GamepadAxis &out);
+	static bool getConstant(GamepadAxis in, SDL_GamepadAxis &out);
 
-	static bool getConstant(SDL_GameControllerButton in, GamepadButton &out);
-	static bool getConstant(GamepadButton in, SDL_GameControllerButton &out);
+	static bool getConstant(SDL_GamepadButton in, GamepadButton &out);
+	static bool getConstant(GamepadButton in, SDL_GamepadButton &out);
 
 private:
 
 	Joystick() {}
 
-	bool checkCreateHaptic();
-	bool runVibrationEffect();
-
 	SDL_Joystick *joyhandle;
-	SDL_GameController *controller;
-	SDL_Haptic *haptic;
+	SDL_Gamepad *controller;
+
+	JoystickType joystickType;
 
 	SDL_JoystickID instanceid;
 	std::string pguid;
@@ -109,31 +119,14 @@ private:
 
 	std::string name;
 
-	struct Vibration
-	{
-		float left  = 0.0f;
-		float right = 0.0f;
-		SDL_HapticEffect effect;
-		Uint16 data[4];
-		int id = -1;
-		Uint32 endtime = SDL_HAPTIC_INFINITY;
-
-		// Old versions of VS2013 have trouble with initializing these in-line.
-		Vibration()
-			: effect()
-			, data()
-		{}
-
-	} vibration;
-
 	static EnumMap<Hat, Uint8, Joystick::HAT_MAX_ENUM>::Entry hatEntries[];
 	static EnumMap<Hat, Uint8, Joystick::HAT_MAX_ENUM> hats;
 
-	static EnumMap<GamepadAxis, SDL_GameControllerAxis, GAMEPAD_AXIS_MAX_ENUM>::Entry gpAxisEntries[];
-	static EnumMap<GamepadAxis, SDL_GameControllerAxis, GAMEPAD_AXIS_MAX_ENUM> gpAxes;
+	static EnumMap<GamepadAxis, SDL_GamepadAxis, GAMEPAD_AXIS_MAX_ENUM>::Entry gpAxisEntries[];
+	static EnumMap<GamepadAxis, SDL_GamepadAxis, GAMEPAD_AXIS_MAX_ENUM> gpAxes;
 
-	static EnumMap<GamepadButton, SDL_GameControllerButton, GAMEPAD_BUTTON_MAX_ENUM>::Entry gpButtonEntries[];
-	static EnumMap<GamepadButton, SDL_GameControllerButton, GAMEPAD_BUTTON_MAX_ENUM> gpButtons;
+	static EnumMap<GamepadButton, SDL_GamepadButton, GAMEPAD_BUTTON_MAX_ENUM>::Entry gpButtonEntries[];
+	static EnumMap<GamepadButton, SDL_GamepadButton, GAMEPAD_BUTTON_MAX_ENUM> gpButtons;
 
 };
 

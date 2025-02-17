@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -68,6 +68,10 @@ void showRecordingPermissionMissingDialog()
 #endif
 }
 
+Audio::Audio(const char *name)
+	: Module(M_AUDIO, name)
+{}
+
 bool Audio::setMixWithSystem(bool mix)
 {
 #ifdef LOVE_IOS
@@ -76,6 +80,11 @@ bool Audio::setMixWithSystem(bool mix)
 	LOVE_UNUSED(mix);
 	return false;
 #endif
+}
+
+void Audio::setPlaybackDevice(const char */*name*/)
+{
+	throw love::Exception("Re-setting output device is not supported.");
 }
 
 StringMap<Audio::DistanceModel, Audio::DISTANCE_MAX_ENUM>::Entry Audio::distanceModelEntries[] =

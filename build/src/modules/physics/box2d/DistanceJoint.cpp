@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -32,6 +32,8 @@ namespace physics
 namespace box2d
 {
 
+love::Type DistanceJoint::type("DistanceJoint", &Joint::type);
+
 DistanceJoint::DistanceJoint(Body *body1, Body *body2, float x1, float y1, float x2, float y2, bool collideConnected)
 	: Joint(body1, body2)
 	, joint(NULL)
@@ -56,24 +58,24 @@ float DistanceJoint::getLength() const
 	return Physics::scaleUp(joint->GetLength());
 }
 
-void DistanceJoint::setFrequency(float hz)
+void DistanceJoint::setStiffness(float k)
 {
-	joint->SetFrequency(hz);
+	joint->SetStiffness(k);
 }
 
-float DistanceJoint::getFrequency() const
+float DistanceJoint::getStiffness() const
 {
-	return joint->GetFrequency();
+	return joint->GetStiffness();
 }
 
-void DistanceJoint::setDampingRatio(float d)
+void DistanceJoint::setDamping(float d)
 {
-	joint->SetDampingRatio(d);
+	joint->SetDamping(d);
 }
 
-float DistanceJoint::getDampingRatio() const
+float DistanceJoint::getDamping() const
 {
-	return joint->GetDampingRatio();
+	return joint->GetDamping();
 }
 
 

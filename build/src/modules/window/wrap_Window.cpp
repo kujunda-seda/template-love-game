@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -20,6 +20,7 @@
 
 #include "wrap_Window.h"
 #include "sdl/Window.h"
+#include "common/Reference.h"
 
 namespace love
 {
@@ -68,15 +69,42 @@ static int readWindowSettings(lua_State *L, int idx, WindowSettings &settings)
 	settings.fullscreen = luax_boolflag(L, idx, settingName(Window::SETTING_FULLSCREEN), settings.fullscreen);
 	settings.msaa = luax_intflag(L, idx, settingName(Window::SETTING_MSAA), settings.msaa);
 	settings.stencil = luax_boolflag(L, idx, settingName(Window::SETTING_STENCIL), settings.stencil);
-	settings.depth = luax_intflag(L, idx, settingName(Window::SETTING_DEPTH), settings.depth);
 	settings.resizable = luax_boolflag(L, idx, settingName(Window::SETTING_RESIZABLE), settings.resizable);
 	settings.minwidth = luax_intflag(L, idx, settingName(Window::SETTING_MIN_WIDTH), settings.minwidth);
 	settings.minheight = luax_intflag(L, idx, settingName(Window::SETTING_MIN_HEIGHT), settings.minheight);
 	settings.borderless = luax_boolflag(L, idx, settingName(Window::SETTING_BORDERLESS), settings.borderless);
 	settings.centered = luax_boolflag(L, idx, settingName(Window::SETTING_CENTERED), settings.centered);
-	settings.display = luax_intflag(L, idx, settingName(Window::SETTING_DISPLAY), settings.display+1) - 1;
-	settings.highdpi = luax_boolflag(L, idx, settingName(Window::SETTING_HIGHDPI), settings.highdpi);
 	settings.usedpiscale = luax_boolflag(L, idx, settingName(Window::SETTING_USE_DPISCALE), settings.usedpiscale);
+
+	lua_getfield(L, idx, settingName(Window::SETTING_DEPTH));
+	if (lua_type(L, -1) == LUA_TNUMBER)
+	{
+		luax_markdeprecated(L, 1, "window.depth number", API_FIELD, DEPRECATED_REPLACED, "window.depth boolean field");
+		settings.depth = (int) luaL_checknumber(L, -1);
+	}
+	else if (!lua_isnoneornil(L, -1))
+		settings.depth = lua_toboolean(L, -1);
+	lua_pop(L, 1);
+
+	settings.displayindex = luax_intflag(L, idx, settingName(Window::SETTING_DISPLAYINDEX), settings.displayindex + 1) - 1;
+	lua_getfield(L, idx, settingName(Window::SETTING_DISPLAY));
+	if (!lua_isnoneornil(L, -1))
+	{
+		luax_markdeprecated(L, 1, "window.display", API_FIELD, DEPRECATED_REPLACED, "displayindex field");
+		settings.displayindex = (int) luaL_checkinteger(L, -1) - 1;
+	}
+	lua_pop(L, 1);
+
+	lua_getfield(L, idx, settingName(Window::SETTING_HIGHDPI));
+	if (!lua_isnoneornil(L, -1))
+	{
+		luax_markdeprecated(L, 1, "window.highdpi", API_FIELD, DEPRECATED_REPLACED, "t.highdpi in love.conf");
+		bool highdpi = luax_checkboolean(L, -1);
+		if (!instance()->isOpen())
+			setHighDPIAllowed(highdpi);
+
+	}
+	lua_pop(L, 1);
 
 	lua_getfield(L, idx, settingName(Window::SETTING_VSYNC));
 	if (lua_isnumber(L, -1))
@@ -179,7 +207,7 @@ int w_getMode(lua_State *L)
 	luax_pushboolean(L, settings.stencil);
 	lua_setfield(L, -2, settingName(Window::SETTING_STENCIL));
 
-	lua_pushinteger(L, settings.depth);
+	luax_pushboolean(L, settings.depth);
 	lua_setfield(L, -2, settingName(Window::SETTING_DEPTH));
 
 	luax_pushboolean(L, settings.resizable);
@@ -198,11 +226,8 @@ int w_getMode(lua_State *L)
 	lua_setfield(L, -2, settingName(Window::SETTING_CENTERED));
 
 	// Display index is 0-based internally and 1-based in Lua.
-	lua_pushinteger(L, settings.display + 1);
-	lua_setfield(L, -2, settingName(Window::SETTING_DISPLAY));
-
-	luax_pushboolean(L, settings.highdpi);
-	lua_setfield(L, -2, settingName(Window::SETTING_HIGHDPI));
+	lua_pushinteger(L, settings.displayindex + 1);
+	lua_setfield(L, -2, settingName(Window::SETTING_DISPLAYINDEX));
 
 	luax_pushboolean(L, settings.usedpiscale);
 	lua_setfield(L, -2, settingName(Window::SETTING_USE_DPISCALE));
@@ -217,6 +242,12 @@ int w_getMode(lua_State *L)
 	lua_setfield(L, -2, settingName(Window::SETTING_Y));
 
 	return 3;
+}
+
+int w_isHighDPIAllowed(lua_State *L)
+{
+	luax_pushboolean(L, isHighDPIAllowed());
+	return 1;
 }
 
 int w_getDisplayOrientation(lua_State *L)
@@ -318,6 +349,7 @@ int w_isOpen(lua_State *L)
 
 int w_close(lua_State *L)
 {
+	luax_markdeprecated(L, 1, "love.window.close", API_FUNCTION, DEPRECATED_NO_REPLACEMENT, nullptr);
 	luax_catchexcept(L, [&]() { instance()->close(); });
 	return 0;
 }
@@ -455,6 +487,12 @@ int w_isVisible(lua_State *L)
 	return 1;
 }
 
+int w_isOccluded(lua_State *L)
+{
+	luax_pushboolean(L, instance()->isOccluded());
+	return 1;
+}
+
 int w_getDPIScale(lua_State *L)
 {
 	lua_pushnumber(L, instance()->getDPIScale());
@@ -524,6 +562,12 @@ int w_maximize(lua_State *)
 int w_restore(lua_State *)
 {
 	instance()->restore();
+	return 0;
+}
+
+int w_focus(lua_State *)
+{
+	instance()->focus();
 	return 0;
 }
 
@@ -604,11 +648,121 @@ int w_showMessageBox(lua_State *L)
 	return 1;
 }
 
+static void fileDialogCallback(void *context, const std::vector<std::string> &files, const char *filtername, const char *errstr)
+{
+	auto r = (Reference *)context;
+	lua_State *L = r->getPinnedL();
+
+	r->push(L);
+
+	lua_createtable(L, (int)files.size(), 0);
+	for (size_t i = 0; i < files.size(); i++)
+	{
+		lua_pushstring(L, files[i].c_str());
+		lua_rawseti(L, -2, (int)i + 1);
+	}
+
+	if (filtername != nullptr)
+		lua_pushstring(L, filtername);
+	else
+		lua_pushnil(L);
+
+	if (errstr != nullptr)
+		lua_pushstring(L, errstr);
+	else
+		lua_pushnil(L);
+
+	int err = lua_pcall(L, 3, 0, 0);
+
+	delete r;
+
+	// Unfortunately, this eats the stack trace, too bad.
+	if (err != 0)
+		throw love::Exception("Error in file dialog callback: %s", lua_tostring(L, -1));
+}
+
+int w_showFileDialog(lua_State *L)
+{
+	Window::FileDialogData data = {};
+
+	const char *typestr = luaL_checkstring(L, 1);
+	if (!Window::getConstant(typestr, data.type))
+		return luax_enumerror(L, "file dialog type", Window::getConstants(data.type), typestr);
+
+	luaL_checktype(L, 2, LUA_TFUNCTION);
+
+	if (!lua_isnoneornil(L, 3))
+	{
+		luaL_checktype(L, 3, LUA_TTABLE);
+
+		lua_getfield(L, 3, "title");
+		if (!lua_isnoneornil(L, -1))
+			data.title = luax_checkstring(L, -1);
+		lua_pop(L, 1);
+
+		lua_getfield(L, 3, "acceptlabel");
+		if (!lua_isnoneornil(L, -1))
+			data.acceptLabel = luax_checkstring(L, -1);
+		lua_pop(L, 1);
+
+		lua_getfield(L, 3, "cancellabel");
+		if (!lua_isnoneornil(L, -1))
+			data.cancelLabel = luax_checkstring(L, -1);
+		lua_pop(L, 1);
+
+		lua_getfield(L, 3, "defaultname");
+		if (!lua_isnoneornil(L, -1))
+			data.defaultName = luax_checkstring(L, -1);
+		lua_pop(L, 1);
+
+		lua_getfield(L, 3, "filters");
+		if (!lua_isnoneornil(L, -1))
+		{
+			luaL_checktype(L, -1, LUA_TTABLE);
+
+			lua_pushnil(L);
+			while (lua_next(L, -2))
+			{
+				Window::FileDialogFilter filter = {};
+				filter.name = luax_checkstring(L, -2);
+				filter.pattern = luax_checkstring(L, -1);
+				data.filters.push_back(filter);
+				lua_pop(L, 1);
+			}
+		}
+		lua_pop(L, 1);
+
+		lua_getfield(L, 3, "multiselect");
+		if (!lua_isnoneornil(L, -1))
+			data.multiSelect = luax_checkboolean(L, -1);
+		lua_pop(L, 1);
+
+		lua_getfield(L, 3, "attachtowindow");
+		if (!lua_isnoneornil(L, -1))
+			data.attachToWindow = luax_checkboolean(L, -1);
+		lua_pop(L, 1);
+	}
+
+	// Save the callback function as a Reference.
+	lua_pushvalue(L, 2);
+	Reference *r = new Reference(L);
+	lua_pop(L, 1);
+
+	instance()->showFileDialog(data, fileDialogCallback, r);
+	return 0;
+}
+
 int w_requestAttention(lua_State *L)
 {
 	bool continuous = luax_optboolean(L, 1, false);
 	instance()->requestAttention(continuous);
 	return 0;
+}
+
+int w_getPointer(lua_State *L)
+{
+	lua_pushlightuserdata(L, instance()->getHandle());
+	return 1;
 }
 
 static const luaL_Reg functions[] =
@@ -618,6 +772,7 @@ static const luaL_Reg functions[] =
 	{ "setMode", w_setMode },
 	{ "updateMode", w_updateMode },
 	{ "getMode", w_getMode },
+	{ "isHighDPIAllowed", w_isHighDPIAllowed },
 	{ "getDisplayOrientation", w_getDisplayOrientation },
 	{ "getFullscreenModes", w_getFullscreenModes },
 	{ "setFullscreen", w_setFullscreen },
@@ -639,6 +794,7 @@ static const luaL_Reg functions[] =
 	{ "hasFocus", w_hasFocus },
 	{ "hasMouseFocus", w_hasMouseFocus },
 	{ "isVisible", w_isVisible },
+	{ "isOccluded", w_isOccluded },
 	{ "getDPIScale", w_getDPIScale },
 	{ "getNativeDPIScale", w_getNativeDPIScale },
 	{ "toPixels", w_toPixels },
@@ -646,10 +802,13 @@ static const luaL_Reg functions[] =
 	{ "minimize", w_minimize },
 	{ "maximize", w_maximize },
 	{ "restore", w_restore },
+	{ "focus", w_focus },
 	{ "isMaximized", w_isMaximized },
 	{ "isMinimized", w_isMinimized },
 	{ "showMessageBox", w_showMessageBox },
+	{ "showFileDialog", w_showFileDialog },
 	{ "requestAttention", w_requestAttention },
+	{ "getPointer", w_getPointer },
 	{ 0, 0 }
 };
 

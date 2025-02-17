@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -39,15 +39,18 @@ namespace font
 class ImageRasterizer : public Rasterizer
 {
 public:
-	ImageRasterizer(love::image::ImageData *imageData, uint32 *glyphs, int numglyphs, int extraspacing, float dpiscale);
+	ImageRasterizer(love::image::ImageData *imageData, const uint32 *glyphs, int numglyphs, int extraspacing, float dpiscale);
 	virtual ~ImageRasterizer();
 
 	// Implement Rasterizer
 	int getLineHeight() const override;
-	GlyphData *getGlyphData(uint32 glyph) const override;
+	int getGlyphSpacing(uint32 glyph) const override;
+	int getGlyphIndex(uint32 glyph) const override;
+	GlyphData *getGlyphDataForIndex(int index) const override;
 	int getGlyphCount() const override;
 	bool hasGlyph(uint32 glyph) const override;
 	DataType getDataType() const override;
+	TextShaper *newTextShaper() override;
 
 
 private:
@@ -57,23 +60,23 @@ private:
 	{
 		int x;
 		int width;
+		uint32 glyph;
 	};
 
 	// Load all the glyph positions into memory
-	void load();
+	void load(const uint32 *glyphs, int glyphcount);
 
 	// The image data
 	StrongRef<love::image::ImageData> imageData;
-
-	// The glyphs in the font
-	uint32 *glyphs;
 
 	// Number of glyphs in the font
 	int numglyphs;
 
 	int extraSpacing;
 
-	std::map<uint32, ImageGlyphData> imageGlyphs;
+
+	std::vector<ImageGlyphData> imageGlyphs;
+	std::map<uint32, int> glyphIndices;
 
 	// Color used to identify glyph separation in the source ImageData
 	Color32 spacer;

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2023 LOVE Development Team
+ * Copyright (c) 2006-2024 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -23,6 +23,7 @@
 
 // LOVE
 #include "math.h"
+#include "Vector.h"
 
 namespace love
 {
@@ -88,6 +89,11 @@ public:
 	 **/
 	const float *getElements() const;
 
+	void setRow(int r, const Vector4 &v);
+	Vector4 getRow(int r) const;
+
+	void setColumn(int c, const Vector4 &v);
+	Vector4 getColumn(int c) const;
 	/**
 	 * Resets this Matrix to the identity matrix.
 	 **/
@@ -221,6 +227,11 @@ public:
 	 * Creates a new orthographic projection matrix.
 	 **/
 	static Matrix4 ortho(float left, float right, float bottom, float top, float near, float far);
+
+	/**
+	 * Creates a new perspective projection matrix.
+	 **/
+	static Matrix4 perspective(float verticalfov, float aspect, float near, float far);
 
 private:
 

@@ -12,8 +12,6 @@
 #include "physfs_internal.h"
 
 #if defined(_MSC_VER)
-#include <stdarg.h>
-
 /* this code came from https://stackoverflow.com/a/8712996 */
 int __PHYSFS_msvc_vsnprintf(char *outBuf, size_t size, const char *format, va_list ap)
 {
@@ -49,6 +47,7 @@ typedef struct __PHYSFS_DIRHANDLE__
     char *root;  /* subdirectory of archiver to use as root of archive (NULL for actual root) */
     size_t rootlen;  /* subdirectory of archiver to use as root of archive (NULL for actual root) */
     const PHYSFS_Archiver *funcs;  /* Ptr to archiver info for this handle. */
+    int forWriting; /* Whether this was opened for writing or not. */
     struct __PHYSFS_DIRHANDLE__ *next;  /* linked list stuff. */
 } DirHandle;
 
@@ -104,8 +103,8 @@ static inline int __PHYSFS_atomicAdd(int *ptrval, const int val)
 {
     int retval;
     __PHYSFS_platformGrabMutex(stateLock);
+    *ptrval += val;
     retval = *ptrval;
-    *ptrval = retval + val;
     __PHYSFS_platformReleaseMutex(stateLock);
     return retval;
 } /* __PHYSFS_atomicAdd */
@@ -862,6 +861,7 @@ static DirHandle *tryOpenDir(PHYSFS_Io *io, const PHYSFS_Archiver *funcs,
             retval->mountPoint = NULL;
             retval->funcs = funcs;
             retval->opaque = opaque;
+            retval->forWriting = forWriting;
         } /* else */
     } /* if */
 
@@ -923,12 +923,12 @@ static DirHandle *openDirectory(PHYSFS_Io *io, const char *d, int forWriting)
             retval = tryOpenDir(io, *i, d, forWriting, &claimed);
     } /* else */
 
-    errcode = currentErrorCode();
+    errcode = claimed ? currentErrorCode() : PHYSFS_ERR_UNSUPPORTED;
 
     if ((!retval) && (created_io))
         io->destroy(io);
 
-    BAIL_IF(!retval, claimed ? errcode : PHYSFS_ERR_UNSUPPORTED, NULL);
+    BAIL_IF(!retval, errcode, NULL);
     return retval;
 } /* openDirectory */
 
@@ -1095,11 +1095,30 @@ static int freeDirHandle(DirHandle *dh, FileHandle *openList)
         BAIL_IF(i->dirHandle == dh, PHYSFS_ERR_FILES_STILL_OPEN, 0);
 
     dh->funcs->closeArchive(dh->opaque);
+
+    if (dh->root) allocator.Free(dh->root);
     allocator.Free(dh->dirName);
     allocator.Free(dh->mountPoint);
     allocator.Free(dh);
     return 1;
 } /* freeDirHandle */
+
+
+static int dirHandleFilesOpen(DirHandle *dh, FileHandle *openList)
+{
+    FileHandle *i;
+
+    if (dh == NULL)
+        return 0;
+
+    for (i = openList; i != NULL; i = i->next)
+    {
+        if (i->dirHandle == dh)
+            return 1;
+    }
+
+    return 0;
+} /* dirHandleFilesOpen */
 
 
 static char *calculateBaseDir(const char *argv0)
@@ -1233,7 +1252,9 @@ int PHYSFS_init(const char *argv0)
     if (!userDir) goto initFailed;
 
     /* Platform layer is required to append a dirsep. */
+    #ifndef __ANDROID__  /* it's an APK file, not a directory, on Android. */
     assert(baseDir[strlen(baseDir) - 1] == __PHYSFS_platformDirSeparator);
+    #endif
     assert(userDir[strlen(userDir) - 1] == __PHYSFS_platformDirSeparator);
 
     if (!initStaticArchivers()) goto initFailed;
@@ -1433,13 +1454,58 @@ char *__PHYSFS_strdup(const char *str)
 } /* __PHYSFS_strdup */
 
 
-PHYSFS_uint32 __PHYSFS_hashString(const char *str, size_t len)
+PHYSFS_uint32 __PHYSFS_hashString(const char *str)
 {
     PHYSFS_uint32 hash = 5381;
-    while (len--)
-        hash = ((hash << 5) + hash) ^ *(str++);
+    while (1)
+    {
+        const char ch = *(str++);
+        if (ch == 0)
+            break;
+        hash = ((hash << 5) + hash) ^ ch;
+    } /* while */
     return hash;
 } /* __PHYSFS_hashString */
+
+
+PHYSFS_uint32 __PHYSFS_hashStringCaseFold(const char *str)
+{
+    PHYSFS_uint32 hash = 5381;
+    while (1)
+    {
+        const PHYSFS_uint32 cp = __PHYSFS_utf8codepoint(&str);
+        if (cp == 0)
+            break;
+        else
+        {
+            PHYSFS_uint32 folded[3];
+            const int numbytes = (int) (PHYSFS_caseFold(cp, folded) * sizeof (PHYSFS_uint32));
+            const char *bytes = (const char *) folded;
+            int i;
+            for (i = 0; i < numbytes; i++)
+                hash = ((hash << 5) + hash) ^ *(bytes++);
+        } /* else */
+    } /* while */
+
+    return hash;
+} /* __PHYSFS_hashStringCaseFold */
+
+
+PHYSFS_uint32 __PHYSFS_hashStringCaseFoldUSAscii(const char *str)
+{
+    PHYSFS_uint32 hash = 5381;
+    while (1)
+    {
+        char ch = *(str++);
+        if (ch == 0)
+            break;
+        else if ((ch >= 'A') && (ch <= 'Z'))
+            ch -= ('A' - 'a');
+
+        hash = ((hash << 5) + hash) ^ ch;
+    } /* while */
+    return hash;
+} /* __PHYSFS_hashStringCaseFoldUSAscii */
 
 
 /* MAKE SURE you hold stateLock before calling this! */
@@ -1733,10 +1799,10 @@ int PHYSFS_setRoot(const char *archive, const char *subdir)
                 if (i->root)
                     allocator.Free(i->root);
                 i->root = ptr;
-                i->rootlen = len;
+                i->rootlen = strlen(i->root);  /* in case sanitizePlatformIndependentPath changed subdir */
 
-                if (longest_root < len)
-                    longest_root = len;
+                if (longest_root < i->rootlen)
+                    longest_root = i->rootlen;
             } /* else */
 
             break;
@@ -1749,7 +1815,7 @@ int PHYSFS_setRoot(const char *archive, const char *subdir)
 
 
 static int doMount(PHYSFS_Io *io, const char *fname,
-                   const char *mountPoint, int appendToPath)
+                   const char *mountPoint, int appendToPath, int forWriting)
 {
     DirHandle *dh;
     DirHandle *prev = NULL;
@@ -1770,7 +1836,7 @@ static int doMount(PHYSFS_Io *io, const char *fname,
         prev = i;
     } /* for */
 
-    dh = createDirHandle(io, fname, mountPoint, 0);
+    dh = createDirHandle(io, fname, mountPoint, forWriting);
     BAIL_IF_MUTEX_ERRPASS(!dh, stateLock, 0);
 
     if (appendToPath)
@@ -1797,7 +1863,7 @@ int PHYSFS_mountIo(PHYSFS_Io *io, const char *fname,
     BAIL_IF(!io, PHYSFS_ERR_INVALID_ARGUMENT, 0);
     BAIL_IF(!fname, PHYSFS_ERR_INVALID_ARGUMENT, 0);
     BAIL_IF(io->version != 0, PHYSFS_ERR_UNSUPPORTED, 0);
-    return doMount(io, fname, mountPoint, appendToPath);
+    return doMount(io, fname, mountPoint, appendToPath, 0);
 } /* PHYSFS_mountIo */
 
 
@@ -1813,7 +1879,7 @@ int PHYSFS_mountMemory(const void *buf, PHYSFS_uint64 len, void (*del)(void *),
 
     io = __PHYSFS_createMemoryIo(buf, len, del);
     BAIL_IF_ERRPASS(!io, 0);
-    retval = doMount(io, fname, mountPoint, appendToPath);
+    retval = doMount(io, fname, mountPoint, appendToPath, 0);
     if (!retval)
     {
         /* docs say not to call (del) in case of failure, so cheat. */
@@ -1837,7 +1903,7 @@ int PHYSFS_mountHandle(PHYSFS_File *file, const char *fname,
 
     io = __PHYSFS_createHandleIo(file);
     BAIL_IF_ERRPASS(!io, 0);
-    retval = doMount(io, fname, mountPoint, appendToPath);
+    retval = doMount(io, fname, mountPoint, appendToPath, 0);
     if (!retval)
     {
         /* docs say not to destruct in case of failure, so cheat. */
@@ -1852,7 +1918,14 @@ int PHYSFS_mountHandle(PHYSFS_File *file, const char *fname,
 int PHYSFS_mount(const char *newDir, const char *mountPoint, int appendToPath)
 {
     BAIL_IF(!newDir, PHYSFS_ERR_INVALID_ARGUMENT, 0);
-    return doMount(NULL, newDir, mountPoint, appendToPath);
+    return doMount(NULL, newDir, mountPoint, appendToPath, 0);
+} /* PHYSFS_mount */
+
+
+int PHYSFS_mountRW(const char *newDir, const char *mountPoint, int appendToPath)
+{
+    BAIL_IF(!newDir, PHYSFS_ERR_INVALID_ARGUMENT, 0);
+    return doMount(NULL, newDir, mountPoint, appendToPath, 1);
 } /* PHYSFS_mount */
 
 
@@ -1882,6 +1955,8 @@ int PHYSFS_unmount(const char *oldDir)
         if (strcmp(i->dirName, oldDir) == 0)
         {
             next = i->next;
+            if (i->forWriting && dirHandleFilesOpen(i, openWriteList))
+                BAIL_MUTEX(PHYSFS_ERR_FILES_STILL_OPEN, stateLock, 0);
             BAIL_IF_MUTEX_ERRPASS(!freeDirHandle(i, openReadList),
                                 stateLock, 0);
 
@@ -1898,6 +1973,28 @@ int PHYSFS_unmount(const char *oldDir)
     BAIL_MUTEX(PHYSFS_ERR_NOT_MOUNTED, stateLock, 0);
 } /* PHYSFS_unmount */
 
+
+int PHYSFS_canUnmount(const char *oldDir)
+{
+    DirHandle *i;
+
+    BAIL_IF(oldDir == NULL, PHYSFS_ERR_INVALID_ARGUMENT, 0);
+
+    __PHYSFS_platformGrabMutex(stateLock);
+    for (i = searchPath; i != NULL; i = i->next)
+    {
+        if (strcmp(i->dirName, oldDir) == 0)
+        {
+            if (i->forWriting && dirHandleFilesOpen(i, openWriteList))
+                BAIL_MUTEX(PHYSFS_ERR_OK, stateLock, 0);
+            if (dirHandleFilesOpen(i, openReadList))
+                BAIL_MUTEX(PHYSFS_ERR_OK, stateLock, 0);
+            BAIL_MUTEX(PHYSFS_ERR_OK, stateLock, 1);
+        }
+    }
+
+    BAIL_MUTEX(PHYSFS_ERR_NOT_MOUNTED, stateLock, 0);
+} /* PHYSFS_canUnmount */
 
 char **PHYSFS_getSearchPath(void)
 {
@@ -2107,10 +2204,10 @@ static int verifyPath(DirHandle *h, char **_fname, int allowMissing)
     if (h->root)
     {
         const int isempty = (*fname == '\0');
-        fname -= h->rootlen - 1;
+        fname -= h->rootlen + (isempty ? 0 : 1);
         strcpy(fname, h->root);
         if (!isempty)
-            fname[h->rootlen - 2] = '/';
+            fname[h->rootlen] = '/';
         *_fname = fname;
     } /* if */
 
@@ -2159,10 +2256,76 @@ static int verifyPath(DirHandle *h, char **_fname, int allowMissing)
 } /* verifyPath */
 
 
-/* This must hold the stateLock before calling. */
-static int doMkdir(const char *_dname, char *dname)
+static int countPathComponents(const char *path)
 {
-    DirHandle *h = writeDir;
+    int components = 0;
+    const char *start;
+    const char *end;
+
+    if (path == NULL)
+        return 0;
+
+    if (*path != '/')
+        components = 1;
+
+    start = path;
+    while (1)
+    {
+        end = strchr(start, '/');
+
+        if (end == NULL)
+            break;
+
+        components++;
+        start = end + 1;
+    }
+
+    return components;
+} /* countPathComponents */
+
+
+static DirHandle *findWriteHandle(const char *_fname)
+{
+    DirHandle *i = NULL;
+    int deepest_path_components = -1;
+    DirHandle *deepest_dirhandle = NULL;
+    char *allocated_fname;
+    char *fname;
+    size_t len;
+
+    len = strlen(_fname) + longest_root + 1;
+    allocated_fname = (char *) __PHYSFS_smallAlloc(len);
+    BAIL_IF(!allocated_fname, PHYSFS_ERR_OUT_OF_MEMORY, NULL);
+    fname = allocated_fname + longest_root;
+
+    if (sanitizePlatformIndependentPath(_fname, fname))
+    {
+        for (i = searchPath; i != NULL; i = i->next)
+        {
+            char *arcfname = fname;
+            if (i->forWriting && verifyPath(i, &arcfname, 0))
+            {
+                int path_components = 0;
+                if (i->mountPoint != NULL)
+                    path_components = countPathComponents(i->mountPoint);
+                if (path_components > deepest_path_components)
+                {
+                    deepest_path_components = path_components;
+                    deepest_dirhandle = i;
+                } /* if */
+            } /* if */
+        } /* for */
+    } /* if */
+
+    __PHYSFS_smallFree(allocated_fname);
+
+    return deepest_dirhandle != NULL ? deepest_dirhandle : writeDir;
+} /* findWriteHandle */
+
+
+/* This must hold the stateLock before calling. */
+static int doMkdir(const char *_dname, char *dname, DirHandle *h)
+{
     char *start;
     char *end;
     int retval = 0;
@@ -2187,7 +2350,12 @@ static int doMkdir(const char *_dname, char *dname)
             const int rc = h->funcs->stat(h->opaque, dname, &statbuf);
             if ((!rc) && (currentErrorCode() == PHYSFS_ERR_NOT_FOUND))
                 exists = 0;
-            retval = ((rc) && (statbuf.filetype == PHYSFS_FILETYPE_DIRECTORY));
+            /* verifyPath made sure that (dname) doesn't have symlinks if they aren't
+               allowed, but it's possible the mounted writeDir itself has symlinks in it,
+               (for example "/var" on iOS is a symlink, and the prefpath will be somewhere
+               under that)...if we mounted that writeDir, we must allow those symlinks here
+               unconditionally. */
+            retval = ( (rc) && ((statbuf.filetype == PHYSFS_FILETYPE_DIRECTORY) || (statbuf.filetype == PHYSFS_FILETYPE_SYMLINK)) );
         } /* if */
 
         if (!exists)
@@ -2212,15 +2380,17 @@ int PHYSFS_mkdir(const char *_dname)
     int retval = 0;
     char *dname;
     size_t len;
+    DirHandle *h = NULL;
 
     BAIL_IF(!_dname, PHYSFS_ERR_INVALID_ARGUMENT, 0);
 
     __PHYSFS_platformGrabMutex(stateLock);
-    BAIL_IF_MUTEX(!writeDir, PHYSFS_ERR_NO_WRITE_DIR, stateLock, 0);
-    len = strlen(_dname) + dirHandleRootLen(writeDir) + 1;
+    h = findWriteHandle(_dname);
+    BAIL_IF_MUTEX(!h, PHYSFS_ERR_NO_WRITE_DIR, stateLock, 0);
+    len = strlen(_dname) + dirHandleRootLen(h) + 1;
     dname = (char *) __PHYSFS_smallAlloc(len);
     BAIL_IF_MUTEX(!dname, PHYSFS_ERR_OUT_OF_MEMORY, stateLock, 0);
-    retval = doMkdir(_dname, dname);
+    retval = doMkdir(_dname, dname, h);
     __PHYSFS_platformReleaseMutex(stateLock);
     __PHYSFS_smallFree(dname);
     return retval;
@@ -2228,9 +2398,8 @@ int PHYSFS_mkdir(const char *_dname)
 
 
 /* This must hold the stateLock before calling. */
-static int doDelete(const char *_fname, char *fname)
+static int doDelete(const char *_fname, char *fname, DirHandle *h)
 {
-    DirHandle *h = writeDir;
     BAIL_IF_ERRPASS(!sanitizePlatformIndependentPathWithRoot(h, _fname, fname), 0);
     BAIL_IF_ERRPASS(!verifyPath(h, &fname, 0), 0);
     return h->funcs->remove(h->opaque, fname);
@@ -2242,13 +2411,15 @@ int PHYSFS_delete(const char *_fname)
     int retval;
     char *fname;
     size_t len;
+    DirHandle *h = NULL;
 
     __PHYSFS_platformGrabMutex(stateLock);
-    BAIL_IF_MUTEX(!writeDir, PHYSFS_ERR_NO_WRITE_DIR, stateLock, 0);
-    len = strlen(_fname) + dirHandleRootLen(writeDir) + 1;
+    h = findWriteHandle(_fname);
+    BAIL_IF_MUTEX(!h, PHYSFS_ERR_NO_WRITE_DIR, stateLock, 0);
+    len = strlen(_fname) + dirHandleRootLen(h) + 1;
     fname = (char *) __PHYSFS_smallAlloc(len);
     BAIL_IF_MUTEX(!fname, PHYSFS_ERR_OUT_OF_MEMORY, stateLock, 0);
-    retval = doDelete(_fname, fname);
+    retval = doDelete(_fname, fname, h);
     __PHYSFS_platformReleaseMutex(stateLock);
     __PHYSFS_smallFree(fname);
     return retval;
@@ -2265,10 +2436,10 @@ static DirHandle *getRealDirHandle(const char *_fname)
     BAIL_IF(!_fname, PHYSFS_ERR_INVALID_ARGUMENT, NULL);
 
     __PHYSFS_platformGrabMutex(stateLock);
-    len = strlen(_fname) + longest_root + 1;
+    len = strlen(_fname) + longest_root + 2;
     allocated_fname = __PHYSFS_smallAlloc(len);
     BAIL_IF_MUTEX(!allocated_fname, PHYSFS_ERR_OUT_OF_MEMORY, stateLock, NULL);
-    fname = allocated_fname + longest_root;
+    fname = allocated_fname + longest_root + 1;
     if (sanitizePlatformIndependentPath(_fname, fname))
     {
         DirHandle *i;
@@ -2496,10 +2667,10 @@ int PHYSFS_enumerate(const char *_fn, PHYSFS_EnumerateCallback cb, void *data)
 
     __PHYSFS_platformGrabMutex(stateLock);
 
-    len = strlen(_fn) + longest_root + 1;
+    len = strlen(_fn) + longest_root + 2;
     allocated_fname = (char *) __PHYSFS_smallAlloc(len);
     BAIL_IF_MUTEX(!allocated_fname, PHYSFS_ERR_OUT_OF_MEMORY, stateLock, 0);
-    fname = allocated_fname + longest_root;
+    fname = allocated_fname + longest_root + 1;
     if (!sanitizePlatformIndependentPath(_fn, fname))
         retval = PHYSFS_ENUM_STOP;
     else
@@ -2631,7 +2802,7 @@ static PHYSFS_File *doOpenWrite(const char *_fname, const int appending)
 
     __PHYSFS_platformGrabMutex(stateLock);
 
-    h = writeDir;
+    h = findWriteHandle(_fname);
     BAIL_IF_MUTEX(!h, PHYSFS_ERR_NO_WRITE_DIR, stateLock, 0);
 
     len = strlen(_fname) + dirHandleRootLen(h) + 1;
@@ -2702,10 +2873,10 @@ PHYSFS_File *PHYSFS_openRead(const char *_fname)
 
     BAIL_IF_MUTEX(!searchPath, PHYSFS_ERR_NOT_FOUND, stateLock, 0);
 
-    len = strlen(_fname) + longest_root + 1;
+    len = strlen(_fname) + longest_root + 2;
     allocated_fname = (char *) __PHYSFS_smallAlloc(len);
     BAIL_IF_MUTEX(!allocated_fname, PHYSFS_ERR_OUT_OF_MEMORY, stateLock, 0);
-    fname = allocated_fname + longest_root;
+    fname = allocated_fname + longest_root + 1;
 
     if (sanitizePlatformIndependentPath(_fname, fname))
     {
@@ -2731,13 +2902,15 @@ PHYSFS_File *PHYSFS_openRead(const char *_fname)
                 io->destroy(io);
                 PHYSFS_setErrorCode(PHYSFS_ERR_OUT_OF_MEMORY);
             } /* if */
-
-            memset(fh, '\0', sizeof (FileHandle));
-            fh->io = io;
-            fh->forReading = 1;
-            fh->dirHandle = i;
-            fh->next = openReadList;
-            openReadList = fh;
+            else
+            {
+                memset(fh, '\0', sizeof (FileHandle));
+                fh->io = io;
+                fh->forReading = 1;
+                fh->dirHandle = i;
+                fh->next = openReadList;
+                openReadList = fh;
+            } /* else */
         } /* if */
     } /* if */
 
@@ -3091,10 +3264,10 @@ int PHYSFS_stat(const char *_fname, PHYSFS_Stat *stat)
     stat->readonly = 1;
 
     __PHYSFS_platformGrabMutex(stateLock);
-    len = strlen(_fname) + longest_root + 1;
+    len = strlen(_fname) + longest_root + 2;
     allocated_fname = (char *) __PHYSFS_smallAlloc(len);
     BAIL_IF_MUTEX(!allocated_fname, PHYSFS_ERR_OUT_OF_MEMORY, stateLock, 0);
-    fname = allocated_fname + longest_root;
+    fname = allocated_fname + longest_root + 1;
 
     if (sanitizePlatformIndependentPath(_fname, fname))
     {
@@ -3115,7 +3288,7 @@ int PHYSFS_stat(const char *_fname, PHYSFS_Stat *stat)
                 if (exists)
                 {
                     stat->filetype = PHYSFS_FILETYPE_DIRECTORY;
-                    stat->readonly = 1;
+                    stat->readonly = !i->forWriting;
                     retval = 1;
                 } /* if */
                 else if (verifyPath(i, &arcfname, 0))
@@ -3227,7 +3400,7 @@ static void setDefaultAllocator(void)
 } /* setDefaultAllocator */
 
 
-int __PHYSFS_DirTreeInit(__PHYSFS_DirTree *dt, const size_t entrylen)
+int __PHYSFS_DirTreeInit(__PHYSFS_DirTree *dt, const size_t entrylen, const int case_sensitive, const int only_usascii)
 {
     static char rootpath[2] = { '/', '\0' };
     size_t alloclen;
@@ -3235,6 +3408,8 @@ int __PHYSFS_DirTreeInit(__PHYSFS_DirTree *dt, const size_t entrylen)
     assert(entrylen >= sizeof (__PHYSFS_DirTreeEntry));
 
     memset(dt, '\0', sizeof (*dt));
+    dt->case_sensitive = case_sensitive;
+    dt->only_usascii = only_usascii;
 
     dt->root = (__PHYSFS_DirTreeEntry *) allocator.Malloc(entrylen);
     BAIL_IF(!dt->root, PHYSFS_ERR_OUT_OF_MEMORY, 0);
@@ -3255,9 +3430,10 @@ int __PHYSFS_DirTreeInit(__PHYSFS_DirTree *dt, const size_t entrylen)
 } /* __PHYSFS_DirTreeInit */
 
 
-static inline PHYSFS_uint32 hashPathName(__PHYSFS_DirTree *dt, const char *name)
+static PHYSFS_uint32 hashPathName(__PHYSFS_DirTree *dt, const char *name)
 {
-    return __PHYSFS_hashString(name, strlen(name)) % dt->hashBuckets;
+    const PHYSFS_uint32 hashval = dt->case_sensitive ? __PHYSFS_hashString(name) : dt->only_usascii ? __PHYSFS_hashStringCaseFoldUSAscii(name) : __PHYSFS_hashStringCaseFold(name);
+    return hashval % dt->hashBuckets;
 } /* hashPathName */
 
 
@@ -3318,6 +3494,7 @@ void *__PHYSFS_DirTreeAdd(__PHYSFS_DirTree *dt, char *name, const int isdir)
 /* Find the __PHYSFS_DirTreeEntry for a path in platform-independent notation. */
 void *__PHYSFS_DirTreeFind(__PHYSFS_DirTree *dt, const char *path)
 {
+    const int cs = dt->case_sensitive;
     PHYSFS_uint32 hashval;
     __PHYSFS_DirTreeEntry *prev = NULL;
     __PHYSFS_DirTreeEntry *retval;
@@ -3328,7 +3505,8 @@ void *__PHYSFS_DirTreeFind(__PHYSFS_DirTree *dt, const char *path)
     hashval = hashPathName(dt, path);
     for (retval = dt->hash[hashval]; retval; retval = retval->hashnext)
     {
-        if (strcmp(retval->name, path) == 0)
+        const int cmp = cs ? strcmp(retval->name, path) : PHYSFS_utf8stricmp(retval->name, path);
+        if (cmp == 0)
         {
             if (prev != NULL)  /* move this to the front of the list */
             {
