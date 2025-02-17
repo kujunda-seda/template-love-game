@@ -14,12 +14,16 @@ If you are new to [LÖVE](https://love2d.org) - it's a straightforward and easy-
 
 As your games will be getting more complex, you might want to apply a little structure into the written code and I welcome you to read my article on [Clean architecture based on LÖVE example](https://medium.com/@yankalbaska/clean-architecture-in-game-development-e57542a96e5e). 
 
-_Replace the above text with your new game description._
+^^^ _⚠️ Replace the above text with your new game description._ ^^^
+
+---
 
 ## Development Environment Setup
 Developing iOS games with [LÖVE framework](https://love2d.org) consists of 2 parts: 
 - `build` - a preset xcode project used for installing on a simulator and distribution (only distribution-specific changes will be required),
 - `src` - the sources for the game, used for the development and to create the final `.love` file. Most of the creative work will be done in this folder only.
+
+> _⚠️ Note: you can also opt out to store the source code in a separate repo, e.g. getting the [New Kingdoms game engine](https://github.com/kujunda-seda/new-kingdoms) sources, and only use this repo for distribution-related content (app name, icon, etc.) and supplying the bundled archived sources to the Xcode project, as described in the [Distribution](#distribution) section below (Option 2). Be sure to include the conf.lua for quick iteration testing on mac with the same screen ratio as in the app._
 
 After running the sources locally, you zip the `/src` source folder contents (without the folder itself) and rename `.zip` file into `.love`. This file is later used in the iOS simulator or XCode project bundle to distribute in TestFlight / App Store.  
 
