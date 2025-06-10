@@ -17,15 +17,23 @@ As your games will be getting more complex, you might want to apply a little str
 ^^^ _⚠️ Replace the above text with your new game description._ ^^^
 
 ---
+# TL;DR
+This setup guide looks tedious, but on the most part it's about configuring your App Store account and Xcode project. And it's detailed enough so you can do this even if you've never done this before. You'll need an Apple Developer Account active, though. After you're done with the Development environment (just below) and [Distribution](#distribution) setup once, your terminal routine is quick: 
+1. `love src` to run the app locally,
+2. `build/upload/testflight.sh` to send the app to the App Store.
+
+That's it. In a few minutes a new build is ready for internal testing in TestFlight.
 
 ## Development Environment Setup
-Developing iOS games with [LÖVE framework](https://love2d.org) consists of 2 parts: 
-- `build` - a preset xcode project used for installing on a simulator and distribution (only distribution-specific changes will be required),
-- `src` - the sources for the game, used for the development and to create the final `.love` file. Most of the creative work will be done in this folder only.
+Developing iOS games with [LÖVE framework](https://love2d.org) consists of 3 parts: 
+1. `src` - the sources for the game, used for the development and to create the final .love file. Most of the creative work will be done in this folder only.
+2. `build` - a preset xcode project used for installing on a simulator and distribution. Only distribution-specific changes will be required, including assets.
+3. `build/upload` - a bash script to pack the sources, archive, export and upload the .ipa to TestFlight in one command.
 
-> _⚠️ Note: you can also opt out to store the source code in a separate repo, e.g. getting the [New Kingdoms game engine](https://github.com/kujunda-seda/new-kingdoms) sources, and only use this repo for distribution-related content (app name, icon, etc.) and supplying the bundled archived sources to the Xcode project, as described in the [Distribution](#distribution) section below (Option 2). Be sure to include the conf.lua for quick iteration testing on mac with the same screen ratio as in the app._
+#### Optional: Storing sources separately, not using the script
+_⚠️ You can also opt out to store the source code in a separate repo, e.g. getting the [New Kingdoms game engine](https://github.com/kujunda-seda/new-kingdoms) sources, and only use this repo for distribution-related content (app name, icon, etc.) and supplying the bundled archived sources to the Xcode project, as described in the [Distribution](#distribution) section below (Option 2). Be sure to include the conf.lua for quick iteration testing on mac with the same screen ratio as in the app._
 
-After running the sources locally, you zip the `/src` source folder contents (without the folder itself) and rename `.zip` file into `.love`. This file is later used in the iOS simulator or XCode project bundle to distribute in TestFlight / App Store.  
+_If not using the upload script, after running the sources locally, you zip the `/src` source folder contents (without the folder itself) and rename `.zip` file into `.love`. This file is later used in the iOS simulator or Xcode project bundle to distribute in TestFlight / App Store._
 
 ### 1. Install LÖVE framework for macOS
 To be able to run and compile LÖVE games you need to install the framework/app.
@@ -95,11 +103,12 @@ In VSCode:
 
 ## Debugging
 In VSCode Terminal run:
-`love src`.
+`love src`.  
 In addition to running the project, it will output `print` statements into the console.  
 You can also use a separate debugging plugin for VSCode [Local Lua Debugger](https://marketplace.visualstudio.com/items?itemName=tomblind.local-lua-debugger-vscode) if you need.
 
 ## Distribution
+### 1. Prerequisites
 1. Before you can configure Xcode, you'll need an Apple Developer account at [developer.apple.com](https://developer.apple.com/account) and a new [bundle identifier](https://developer.apple.com/account/resources/identifiers/list) for the app. Detailed instructions are subject to change:
     - After you log in to **Identifiers** page, hit `+`
     - Choose **App IDs** > Continue > **App**
@@ -120,25 +129,40 @@ You can also use a separate debugging plugin for VSCode [Local Lua Debugger](htt
     - Privacy - Bluetooth Always Usage Description
     - App Uses Non-Exempt Encryption: NO
 
-There are 2 options to test the game:
-#### Option 1. Airdrop - quick for local testing
+There are 3 options to test the game:
+### 2. (Optional) Airdrop - quick for local testing
+You can skip this step if you want to distribute to TestFlight.
+
 The easiest way to test your game on iOS Simulator or device is running `love-ios` in XCode and drag-and-dropping or air-dropping the `.love` file straight into the app. You will have a list of apps you dropped earlier and can start any of them.
 
-#### Option 2. Fusing a single game - for TestFlight and App Store
-2.1. Select `love-ios` in Targets for your project > Build Phases > Copy Bundle Resources and link to your `.love` file:
+### 3. Fusing a single game - for TestFlight and App Store
+3.1. If you haven't yet created it manually, create .love file in `build/upload/derived` folder (used by upload script) by running:
+```
+mkdir -p build/upload/derived
+cd src
+zip -r ../build/upload/derived/yourprojectname.love ./*
+cd ..
+```
+
+3.2. Select `love-ios` in Targets for your project > Build Phases > Copy Bundle Resources and link to your `.love` file:
 "+" > Add Others > find `.love` file (can be outside of XCode project path) > select the options:
   - Copy items if needed
   - Create folder references
 
-2.2. (Optional, but desired) Change the name: File inspector (right sidebar) for project > Identity and Type > Name. Proceed with the renaming of the linked files and targets as well. (Xcode 16.2 crashed after the rename, but it was successful).
+3.3. (Optional, but desired) Change the name: File inspector (right sidebar) for project > Identity and Type > Name. Proceed with the renaming of the linked files and targets as well. (Xcode 16.2 crashed after the rename, but it was successful).
 
-2.3. (Optional, but desired) Change the `Version` in the project > Identity settings, e.g. `1.0` or `0.0.1`. You can also set **Display Name** and **Build** (will be automatically incrmented if not set).
+Rename the variable in the upload script `testflight.sh` as well.
+```
+PROJECT_NAME="yourprojectname"
+```
 
-2.4  (Optional) Change the icon of the app by providing required images in Project > Images > iOS AppIcon (see Apple Guidelines for it).
+3.4. (Optional, but desired) Change the `Version` in the project > Identity settings, e.g. `1.0` or `0.0.1`. You can also set **Display Name** and **Build** (will be automatically incrmented if not set).
 
-2.5. In the main screen top bar select `[name]-ios` target > Any iOS Device, run menu Product > Archive. Your app is now good to be distributed in TestFlight.
+3.5  (Optional) Change the icon of the app by providing required images in Project > Images > iOS AppIcon (see Apple Guidelines for it).
 
-2.6. For first time distribution you need to create an app in the https://appstoreconnect.apple.com/apps
+3.6. In the main screen top bar select `[name]-ios` target > Any iOS Device, run menu Product > Archive. Your app is now good to be distributed in TestFlight.
+
+3.7. For first time distribution you need to create an app in the https://appstoreconnect.apple.com/apps
     - Apps > Hit `+` > New App
     - Choose Platform, e.g. iOS
     - Choose unique name (can't be the same app in the App Store, you can change it later)
@@ -147,6 +171,26 @@ The easiest way to test your game on iOS Simulator or device is running `love-io
     - Enter SKU in your preferred format for the developer account
     - Choose how other users can access the app
 
-2.7. Back to Xcode, open **Window** > **Organizer** > Select build > **Distribute App** > **App Store Connect**. You might get an warning about `Upload Symbols Failed` for certain frameworks (e.g. SDL3), but it doesn't prevent the app from the successful upload. You can create select a **Custom** > **App Store Connect** > **Upload** (wait) > Deselect **Upload your app's symbols** to skip the error.
+3.8. Back to Xcode, open **Window** > **Organizer** > Select build > **Distribute App** > **App Store Connect**. You might get an warning about `Upload Symbols Failed` for certain frameworks (e.g. SDL3), but it doesn't prevent the app from the successful upload. You can create select a **Custom** > **App Store Connect** > **Upload** (wait) > Deselect **Upload your app's symbols** to skip the error.
 
-2.8. Wait until the app finished processing and assign Internal testing group. The build will be available in TestFlight.
+3.9. Wait until the app finished processing and assign Internal testing group. The build will be available in TestFlight.
+
+### 4. Automate TestFlight (previous step)
+After you're done with the Xcode distribution once, you can automate it by running the provided script. You'll need the following set up:
+
+4.1. Go to [App Store Connect API integrations](https://appstoreconnect.apple.com/access/integrations/api) to generate the API key for the upload. Hit '+', name the key, set at least `App Manager` role, click **Generate**.
+
+4.2. Copy Key ID and Issuer ID, you will export those as variables like this or in `.zshrc`, not to store any credentials in a script:
+```
+export API_KEY_ID="1A2BC3DEFG"
+export API_ISSUER_ID="11223344-5566-7788-99aa-bbccddeeff00"
+```
+
+4.3. Download the private key and put it into `~./appstoreconnect/private_keys` folder as instructed in the [official docs](https://help.apple.com/itc/transporteruserguide/en.lproj/static.html).
+
+4.4. Set `chmod 600` permissions on the key to prevent unauthorized access.
+
+4.5. All actions above are done only once. Now go to your project root and run the following command in terminal, your app will be uploaded to the App Store for internal testing:
+```
+build/upload/testflight.sh
+```

@@ -3,9 +3,9 @@
 *.dylib
 *.dmg*
 
-# Compound love executables
+# Derived archives
 src/*.zip
-src/*.love
+build/upload/derived/*
 
 # Thumbnails
 ._*
