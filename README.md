@@ -175,7 +175,7 @@ PROJECT_NAME="yourprojectname"
 
 3.9. Wait until the app finished processing and assign Internal testing group. The build will be available in TestFlight.
 
-### 4. Automate TestFlight (previous step)
+### 4. Automate TestFlight distribution (previous step)
 After you're done with the Xcode distribution once, you can automate it by running the provided script. You'll need the following set up:
 
 4.1. Go to [App Store Connect API integrations](https://appstoreconnect.apple.com/access/integrations/api) to generate the API key for the upload. Hit '+', name the key, set at least `App Manager` role, click **Generate**.
