@@ -4,7 +4,7 @@
 _Note: This repo is not intended for contributing. Its only purpose is to provide a ready-made template to create games with Lua and LÖVE framework for iOS without the need for time consuming setup._
 
 [![LÖVE](https://img.shields.io/badge/LÖVE-11.5-gold)](#)
-[![Xcode](https://img.shields.io/badge/Xcode-16.2-gold)](#)
+[![Xcode](https://img.shields.io/badge/Xcode-16.4-gold)](#)
 
 If you are new to [LÖVE](https://love2d.org) - it's a straightforward and easy-to-learn game development framework with a basic run loop, events and graphics. It doesn't limit your creativity as some engines do. And if you're into coding, you can create your new game literally in days, even if you had no prior experience with the [Lua language](https://www.lua.org/start.html). You just need four (or two) steps to start:
 1. Install the tools
@@ -74,6 +74,8 @@ It will automatically (at least upon restart) ask you to configure your project 
 You can create your own game from [this template repo](https://github.com/kujunda-seda/template-love-game).
 
 ### 5. (Optional) Update preset project sources (for iOS distribution only)
+(i) Latest sources commit references: [love](https://github.com/love2d/love/commit/6cab1a10fca9b0906278c4936b8927f0d55c334b), [love-apple-dependecies](https://github.com/love2d/love-apple-dependencies/commit/d47962a4a56266d82f315f0deead7136e0b24220)
+
 If a new version of LÖVE framework comes out, you may want to update the `build` part of this repo before or during development. Otherwise it's already configured and you can skip this step: 
 1. Clone [LÖVE repo](https://github.com/love2d/love) containing the sources and a preset XCode project into a separate folder:
 ```
