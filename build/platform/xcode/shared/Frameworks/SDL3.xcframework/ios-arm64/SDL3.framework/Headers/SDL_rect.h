@@ -324,7 +324,7 @@ SDL_FORCE_INLINE bool SDL_PointInRectFloat(const SDL_FPoint *p, const SDL_FRect 
 }
 
 /**
- * Determine whether a floating point rectangle can contain any point.
+ * Determine whether a floating point rectangle takes no space.
  *
  * A rectangle is considered "empty" for this function if `r` is NULL, or if
  * `r`'s width and/or height are < 0.0f.
@@ -371,7 +371,7 @@ SDL_FORCE_INLINE bool SDL_RectEmptyFloat(const SDL_FRect *r)
  *
  * \sa SDL_RectsEqualFloat
  */
-SDL_FORCE_INLINE bool SDL_RectsEqualEpsilon(const SDL_FRect *a, const SDL_FRect *b, const float epsilon)
+SDL_FORCE_INLINE bool SDL_RectsEqualEpsilon(const SDL_FRect *a, const SDL_FRect *b, float epsilon)
 {
     return (a && b && ((a == b) ||
             ((SDL_fabsf(a->x - b->x) <= epsilon) &&
