@@ -175,7 +175,7 @@ function love.run()
 			love.event.pump()
 			for name, a,b,c,d,e,f,g,h in love.event.poll() do
 				if name == "quit" then
-					if not love.quit or not love.quit() then
+					if c or not love.quit or not love.quit() then
 						return a or 0, b
 					end
 				end
@@ -202,6 +202,7 @@ function love.run()
 	end
 end
 
+local pcall, table = pcall, table
 local debug, print, tostring, error = debug, print, tostring, error
 
 function love.threaderror(t, err)
@@ -214,7 +215,7 @@ local function error_printer(msg, layer)
 	print((debug.traceback("Error: " .. tostring(msg), 1+(layer or 1)):gsub("\n[^\n]+$", "")))
 end
 
-function love.errhand(msg)
+function love.errorhandler(msg)
 	msg = tostring(msg)
 
 	error_printer(msg, 2)
@@ -305,7 +306,7 @@ function love.errhand(msg)
 	end
 
 	return function()
-		love.event.pump()
+		love.event.pump(0.1)
 
 		for e, a, b, c in love.event.poll() do
 			if e == "quit" then
@@ -333,11 +334,14 @@ function love.errhand(msg)
 		draw()
 
 		if love.timer then
-			love.timer.sleep(0.1)
+			love.timer.sleep(0.001)
 		end
 	end
 
 end
+
+-- Legacy code support.
+love.errhand = love.errorhandler
 
 -- DO NOT REMOVE THE NEXT LINE. It is used to load this file as a C++ string.
 --)luastring"--"
