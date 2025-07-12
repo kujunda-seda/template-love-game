@@ -65,23 +65,9 @@ Pool::Pool(ALCdevice *device)
 	if (totalSources < 4)
 		throw love::Exception("Could not generate sources.");
 
-#ifdef AL_SOFT_direct_channels
-	ALboolean hasext = alIsExtensionPresent("AL_SOFT_direct_channels");
-#endif
-
 	// Make all sources available initially.
 	for (int i = 0; i < totalSources; i++)
-	{
-#ifdef AL_SOFT_direct_channels
-		if (hasext)
-		{
-			// Bypass virtualization of speakers for multi-channel sources in OpenAL Soft.
-			alSourcei(sources[i], AL_DIRECT_CHANNELS_SOFT, AL_TRUE);
-		}
-#endif
-
 		available.push(sources[i]);
-	}
 }
 
 Pool::~Pool()
@@ -120,7 +106,7 @@ void Pool::update()
 
 	thread::Lock lock(mutex);
 
-	static bool disconnectExtSupported = alcIsExtensionPresent(device, "ALC_EXT_Disconnect") == ALC_TRUE;
+	static bool disconnectExtSupported = alcIsExtensionPresent(device, "ALC_EXT_disconnect") == ALC_TRUE;
 
 	// Device disconnection event
 	if (disconnectExtSupported)

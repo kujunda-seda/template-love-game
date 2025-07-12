@@ -98,14 +98,15 @@ static bool SDLCALL watchAppEvents(void *udata, SDL_Event *event)
 		}
 		break;
 	case SDL_EVENT_WINDOW_EXPOSED:
-		if (eventModule != nullptr && SDL_IsMainThread())
+		// Only redraw during live-resize events (data1 is 1 in that situation).
+		if (event->window.data1 == 1 && eventModule != nullptr && SDL_IsMainThread() && eventModule->allowModalDraws())
 			eventModule->modalDraw();
 		break;
 	default:
 		break;
 	}
 
-	return 1;
+	return true;
 }
 
 Event::Event()
@@ -143,37 +144,62 @@ void Event::pump(float waitTimeout)
 		else if (waitTimeout > 0.0f)
 			waitTimeoutMS = (int)std::min<int64>(LOVE_INT32_MAX, 1000LL * waitTimeout);
 
+		// Wait for the first event, if requested. WaitEvent also calls PumpEvents.
+		SDL_Event e = {};
+		insideEventPump = true;
+		bool success = false;
 		try
 		{
-			// Wait for the first event, if requested.
-			SDL_Event e;
-			insideEventPump = true;
-			if (SDL_WaitEventTimeout(&e, waitTimeoutMS))
-			{
-				insideEventPump = false;
-				StrongRef<Message> msg(convert(e), Acquire::NORETAIN);
-				if (msg)
-					push(msg);
-
-				// Fetch any extra events that came in during WaitEvent.
-				shouldPoll = true;
-			}
-			else
-			{
-				insideEventPump = false;
-			}
+			success = SDL_WaitEventTimeout(&e, waitTimeoutMS);
 		}
 		catch (std::exception &)
 		{
 			insideEventPump = false;
 			throw;
 		}
+		insideEventPump = false;
+
+		if (success)
+		{
+			StrongRef<Message> msg(convert(e), Acquire::NORETAIN);
+			if (msg)
+				push(msg);
+
+			// Fetch any extra events that came in during WaitEvent.
+			shouldPoll = true;
+		}
+
+		// For exceptions generated inside a modal draw callback, propagate them
+		// outside of OS event processing instead of inside.
+		if (!deferredExceptionMessage.empty())
+		{
+			std::string exceptionstr = deferredExceptionMessage;
+			deferredExceptionMessage.clear();
+			deferredReturnValues[0] = Variant();
+			deferredReturnValues[1] = Variant();
+			throw love::Exception("%s", exceptionstr.c_str());
+		}
+
+		if (deferredReturnValues[0].getType() != Variant::NIL)
+		{
+			// Third arg being true will tell love.run to skip the love.quit callback,
+			// since the original modal draw function already processed that.
+			std::vector<Variant> args = {deferredReturnValues[0], deferredReturnValues[1], Variant(true)};
+
+			StrongRef<Message> msg(new Message("quit", args), Acquire::NORETAIN);
+
+			// Push to the front of queue so it's dealt with before any other event.
+			push(msg, true);
+
+			deferredReturnValues[0] = Variant();
+			deferredReturnValues[1] = Variant();
+		}
 	}
 
 	if (shouldPoll)
 	{
 		SDL_Event e;
-		while (SDL_PollEvent(&e))
+		while (SDL_PeepEvents(&e, 1, SDL_GETEVENT, SDL_EVENT_FIRST, SDL_EVENT_LAST) > 0)
 		{
 			StrongRef<Message> msg(convert(e), Acquire::NORETAIN);
 			if (msg)
@@ -206,6 +232,11 @@ void Event::clear()
 	}
 
 	love::event::Event::clear();
+}
+
+bool Event::allowModalDraws() const
+{
+	return insideEventPump;
 }
 
 void Event::exceptionIfInRenderPass(const char *name)
