@@ -43,6 +43,12 @@ echo "==> 1/4: Creating $PROJECT_NAME.love from sources"
   cd ..
 } > "$LOG_FILE" 2>&1
 
+# Check if only the love file is requested
+if [[ "$1" == "-l" || "$1" == "--love-file-only" ]]; then
+  echo "✅ Love archive is updated."
+  exit 0
+fi
+
 echo "==> 2/4: Cleaning and archiving Xcode project"
 {
   xcodebuild clean -project "$PROJECT" -scheme "$SCHEME"
