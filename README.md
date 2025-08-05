@@ -8,7 +8,7 @@ _Note: This repo is not intended for contributing. Its only purpose is to provid
 
 If you are new to [LÖVE](https://love2d.org) - it's a straightforward and easy-to-learn game development framework with a basic run loop, events and graphics. It doesn't limit your creativity as some engines do. And if you're into coding, you can create your new game literally in days, even if you had no prior experience with the [Lua language](https://www.lua.org/start.html). You just need four (or two) steps to start:
 1. Install the tools
-2. Create the repo
+2. Create the repo (and update LICENSE.md)
 3. Change Apple Developer team and app bundle identifier
 4. Distribute to TestFlight
 
