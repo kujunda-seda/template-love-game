@@ -71,7 +71,7 @@ It will automatically (at least upon restart) ask you to configure your project 
 3.2. (Optional) To run games from IDE with a shortcut, install [Love 2D Support](https://marketplace.visualstudio.com/items?itemName=pixelbyte-studios.pixelbyte-love2d) plugin and configure its path to Love executable (same as alias you provided earlier) `/Applications/love.app/Contents/MacOS/love` which is also added to workspace settings file above.
 
 ### 4. Create a new repository
-You can create your own game from [this template repo](https://github.com/kujunda-seda/template-love-game).
+You can create your own game from [this template repo](https://github.com/kujunda-seda/template-love-game). Don't forget to update the LICENSE.md for your code.
 
 ### 5. (Optional) Update preset project sources (for iOS distribution only)
 (i) Latest sources commit references: [love](https://github.com/love2d/love/commit/6cab1a10fca9b0906278c4936b8927f0d55c334b), [love-apple-dependecies](https://github.com/love2d/love-apple-dependencies/commit/d47962a4a56266d82f315f0deead7136e0b24220)
