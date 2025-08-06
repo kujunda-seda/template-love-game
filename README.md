@@ -73,6 +73,13 @@ It will automatically (at least upon restart) ask you to configure your project 
 ### 4. Create a new repository
 You can create your own game from [this template repo](https://github.com/kujunda-seda/template-love-game). Don't forget to update the LICENSE.md for your code.
 
+You can use something as simple as this LICENSE.md, replacing year and name:
+```
+All rights reserved. Copyright &copy; [year] [your name or company].
+
+The code in the `/build` folder is based on the [template-love-game repo](https://github.com/kujunda-seda/template-love-game). Please refer to its [LICENSE.md](https://github.com/kujunda-seda/template-love-game/blob/master/LICENSE.md) for details.
+```
+
 ### 5. (Optional) Update preset project sources (for iOS distribution only)
 (i) Latest sources commit references: [love](https://github.com/love2d/love/commit/6cab1a10fca9b0906278c4936b8927f0d55c334b), [love-apple-dependecies](https://github.com/love2d/love-apple-dependencies/commit/d47962a4a56266d82f315f0deead7136e0b24220)
 
